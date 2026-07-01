@@ -1,47 +1,56 @@
-# SmartEducationManager Dist
+# SmartEducationManager
 
-智慧教育管理系统的 Windows 便携发布包仓库，内置 Java 运行时，下载后可直接启动。
+智慧教育管理系统源码库，基于 Java 17、Spring Boot 3 和 Maven 构建。
 
 ## 仓库定位
 
-这是一个发布包仓库，不是完整的 Java 源码仓库。
+这是项目的源码仓库，用于保存后端服务、页面模板、静态资源、配置示例和部署说明。
 
 仓库主要用于：
 
-- 存放可直接运行的 Windows 分发版本
-- 提供启动脚本、运行配置和使用说明
-- 方便下载、部署、演示和备份
+- 维护 Java / Spring Boot 源码
+- 记录开发、构建和部署方式
+- 生成可运行的 JAR 包
+- 从源码构建 `dist/` 目录中的 Windows 安装包/便携版
 
-如果你想在 GitHub 上展示源码、开发过程和模块设计，建议后续再单独维护一个源码仓库。
+`dist/` 是本地构建出的发布目录，属于安装包版本，不作为源码内容提交到 Git。
 
-## 包含内容
+## 项目结构
 
-- `education-manager.jar`：系统主程序
-- `runtime/`：内置 Java 运行时，无需用户额外安装 JDK
-- `config/application.yml`：运行配置文件
-- `bin/`：PowerShell 辅助脚本
-- `start.bat` / `stop.bat`：启动与停止入口
-- `README.txt`：面向普通 Windows 用户的本地说明
-
-更详细的目录说明见 `PROJECT_STRUCTURE.md`。
+- `src/`：应用源码、页面模板和静态资源
+- `docs/`：部署和维护说明
+- `pom.xml`：Maven 项目配置
+- `Dockerfile`：容器镜像构建文件
+- `dist/`：本地生成的 Windows 发布包目录，已在 `.gitignore` 中忽略
+- `target/`：Maven 构建产物，已在 `.gitignore` 中忽略
 
 ## 运行环境
 
-- Windows 10 / 11
-- 本机或局域网可访问的 MySQL
-- 默认访问地址：`http://localhost:8080`
+- JDK 17
+- Maven 3.8+
+- MySQL
 
-## 快速开始
+默认访问地址：`http://localhost:8080`
 
-1. 打开 `config/application.yml`。
-2. 按实际环境修改数据库连接和 JWT 密钥。
-3. 双击 `start.bat` 或 `启动系统.bat`。
-4. 在浏览器中访问 `http://localhost:8080`。
-5. 停止时双击 `stop.bat` 或 `停止系统.bat`。
+## 本地运行
+
+1. 配置数据库连接和 JWT 密钥。
+2. 执行：
+
+```bash
+mvn spring-boot:run
+```
+
+也可以先构建 JAR：
+
+```bash
+mvn clean package
+java -jar target/education-manager-1.0.0.jar
+```
 
 ## 关键配置
 
-提交到公开仓库时，配置文件中应只保留占位值，不要保留真实凭据。
+公开源码仓库中只应保留占位值，不要提交真实数据库密码、JWT 密钥和生产环境配置。
 
 ```yml
 spring:
@@ -54,28 +63,11 @@ jwt:
   secret: ${JWT_SECRET:ChangeThisJwtSecretBeforeProductionUse_AtLeast32CharsLong}
 ```
 
-## 常用操作
+## 部署
 
-- 启动系统：`start.bat`
-- 停止系统：`stop.bat`
-- 检查状态：`检查状态.bat`
-- 打包发布：`打包发布.bat`
-- 创建桌面快捷方式：`安装到桌面.bat`
+部署说明见 `docs/deployment.md`。
 
-## 仓库维护建议
-
-- 保留 `logs/` 和 `uploads/` 在 `.gitignore` 中
-- 不要提交真实数据库密码、JWT 密钥和生产环境配置
-- 当前仓库包含较大的二进制文件，适合做发布包仓库
-- 如果后续版本继续增大，建议考虑 GitHub Releases 或 Git LFS
-
-## 适合当前仓库的管理方式
-
-推荐做法：
-
-- 当前仓库继续保留为 `dist` 仓库
-- 后续如有源码，再单独建立 `smart-education-manager` 源码仓库
-- 发布包通过源码仓库打包后同步到当前仓库，或发布到 Releases
+Windows 安装包/便携版应由源码构建生成，并输出到本地 `dist/` 目录或作为 GitHub Releases 附件发布。
 
 ## License
 

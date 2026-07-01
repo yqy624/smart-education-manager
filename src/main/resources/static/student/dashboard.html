@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学生工作台</title>
+  <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js?v=20240630"></script>
+  <link href="/css/app.css?v=20240630" rel="stylesheet">
+</head>
+<body class="page-shell" data-role="student">
+<div class="dashboard-shell">
+  <aside class="sidebar">
+    <div class="d-flex align-items-center gap-2 mb-4">
+      <div class="brand-mark"><i class="fa-solid fa-user-graduate"></i></div>
+      <div>
+        <div class="fw-bold">学生工作台</div>
+        <div class="small text-white-50">选课、作业、成绩</div>
+      </div>
+    </div>
+    <div class="nav-item active" data-tab="dashboard"><i class="fa-solid fa-chart-line"></i> 概览</div>
+    <div class="nav-item" data-tab="courses"><i class="fa-solid fa-book"></i> 课程</div>
+    <div class="nav-item" data-tab="assignments"><i class="fa-solid fa-file-circle-check"></i> 作业</div>
+    <div class="nav-item" data-tab="grades"><i class="fa-solid fa-chart-column"></i> 成绩</div>
+  </aside>
+  <main class="main-area">
+    <div class="topbar mb-3">
+      <div>
+        <div class="fw-semibold" id="titleText">概览</div>
+        <div class="breadcrumb-bar p-0" id="breadcrumb"></div>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <button id="themeToggle" class="btn btn-outline-secondary btn-sm" onclick="App.toggleTheme()"><i class="fa-solid fa-moon"></i></button>
+        <div class="notif-wrap">
+          <button class="notif-btn" onclick="App.toggleNotifPanel()"><i class="fa-regular fa-bell"></i><span class="notif-badge" id="notifBadge">0</span></button>
+          <div class="notif-panel" id="notifPanel">
+            <div class="notif-head d-flex justify-content-between"><span>通知中心</span><a href="javascript:;" onclick="App.markAllRead()">全部已读</a></div>
+            <div id="notifBody"></div>
+          </div>
+        </div>
+        <button class="btn btn-link p-0 text-decoration-none fw-semibold text-body" id="userName" type="button" onclick="openProfileModal()" title="个人主页">学生</button>
+        <a href="javascript:App.logout()" class="logout-link text-decoration-none text-muted small" title="退出登录">
+          <i class="fa-solid fa-right-from-bracket"></i>
+        </a>
+      </div>
+    </div>
+
+    <section id="view-dashboard" class="view">
+      <div class="hero-banner mb-3">
+        <div class="eyebrow"><i class="fa-solid fa-user-graduate"></i> 学习概览</div>
+        <div class="title">欢迎回来，<span id="heroName">同学</span></div>
+        <div class="desc">查看课程进度、待提交作业和最新成绩，合理规划学习时间。</div>
+      </div>
+      <div class="kpi-grid mb-3" id="kpiGrid"></div>
+      <div class="row g-3">
+        <div class="col-lg-6"><div class="section-card"><div id="chartScores" style="height:320px"></div></div></div>
+        <div class="col-lg-6"><div class="section-card" id="recentBox"></div></div>
+      </div>
+    </section>
+
+    <section id="view-courses" class="view d-none">
+      <div class="section-card"><div id="courseBox"></div></div>
+    </section>
+    <section id="view-assignments" class="view d-none">
+      <div class="section-card"><div id="assignmentBox"></div></div>
+    </section>
+    <section id="view-grades" class="view d-none">
+      <div class="section-card"><div id="gradeBox"></div></div>
+    </section>
+  </main>
+</div>
+
+<div class="modal fade" id="profileModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">个人主页</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <label class="form-label" for="profileUsername">用户名</label>
+        <input id="profileUsername" class="form-control mb-2" disabled>
+        <label class="form-label" for="profileDisplayName">姓名</label>
+        <input id="profileDisplayName" class="form-control mb-2" maxlength="50" placeholder="请输入姓名">
+        <label class="form-label" for="profileEmail">邮箱</label>
+        <input id="profileEmail" type="email" class="form-control mb-2" maxlength="100" placeholder="请输入邮箱">
+        <label class="form-label" for="profilePassword">新密码</label>
+        <input id="profilePassword" type="password" class="form-control" placeholder="不修改请留空">
+        <div class="form-text">密码留空时不会修改原密码。</div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="saveProfile()">保存</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="submitModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">提交作业</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="submitAssignmentId">
+        <div class="mb-2 fw-semibold" id="submitTitle"></div>
+        <div class="mb-2 small text-muted" id="submittedPreview"></div>
+        <textarea id="submitContent" class="form-control mb-3" rows="4" placeholder="填写作业内容"></textarea>
+        <input type="file" id="submitFile" class="form-control">
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="submitAssignment()">提交</button></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+<script src="/js/app.js?v=20240630"></script>
+<script>
+window.TOKEN = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+if (!TOKEN) location.href = "/login.html";
+App.initTheme();
+App.initNotifications(TOKEN);
+App.setBreadcrumb(["学生工作台", "概览"]);
+var displayName = localStorage.getItem("displayName") || "学生";
+document.getElementById("userName").textContent = displayName;
+document.getElementById("heroName").textContent = displayName;
+
+var tabs = Array.from(document.querySelectorAll(".nav-item"));
+var coursePage = 1;
+var assignmentPage = 1;
+var gradePage = 1;
+var pageSize = 5;
+var assignmentSubmissions = {};
+tabs.forEach(function(el) { el.addEventListener("click", function() { switchTab(el.dataset.tab); }); });
+function switchTab(tab) {
+  tabs.forEach(function(x) { x.classList.toggle("active", x.dataset.tab === tab); });
+  document.querySelectorAll(".view").forEach(function(v) { v.classList.add("d-none"); });
+  document.getElementById("view-" + tab).classList.remove("d-none");
+  var title = {dashboard:"概览", courses:"课程", assignments:"作业", grades:"成绩"}[tab];
+  document.getElementById("titleText").textContent = title;
+  App.setBreadcrumb(["学生工作台", title]);
+  if (tab === "courses") loadCourses();
+  if (tab === "assignments") loadAssignments();
+  if (tab === "grades") loadGrades();
+}
+
+async function api(url, method, body) {
+  if (method === undefined) method = "GET";
+  var res = await fetch("/api" + url, {
+    method: method,
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN },
+    body: body ? JSON.stringify(body) : null
+  });
+  var data = await res.json();
+  if (!data.success) throw new Error(data.message || "请求失败");
+  return data.data;
+}
+
+async function openProfileModal() {
+  try {
+    var profile = await api("/profile");
+    profileUsername.value = profile.username || "";
+    profileDisplayName.value = profile.displayName || "";
+    profileEmail.value = profile.email || "";
+    profilePassword.value = "";
+    new bootstrap.Modal(profileModal).show();
+  } catch (err) {
+    alert(err.message || "加载个人资料失败");
+  }
+}
+
+async function saveProfile() {
+  try {
+    var payload = {
+      displayName: profileDisplayName.value.trim(),
+      email: profileEmail.value.trim(),
+      newPassword: profilePassword.value.trim()
+    };
+    if (!payload.newPassword) delete payload.newPassword;
+    var profile = await api("/profile", "PUT", payload);
+    var name = profile.displayName || profile.username || "学生";
+    localStorage.setItem("displayName", name);
+    document.getElementById("userName").textContent = name;
+    document.getElementById("heroName").textContent = name;
+    bootstrap.Modal.getInstance(profileModal).hide();
+    alert("个人资料已更新");
+  } catch (err) {
+    alert(err.message || "保存失败");
+  }
+}
+
+function handleKpiKey(event, tab) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    switchTab(tab);
+  }
+}
+
+function renderPager(total, page, target, action) {
+  var pages = Math.max(1, Math.ceil(total / pageSize));
+  var html = '<div class="d-flex justify-content-end align-items-center gap-2 mt-3"><span class="small text-muted">每页 ' + pageSize + ' 行，第 ' + page + ' / ' + pages + ' 页</span>';
+  html += '<button class="btn btn-outline-secondary btn-sm" onclick="' + action + '(' + Math.max(1, page - 1) + ')" ' + (page <= 1 ? "disabled" : "") + '>上一页</button>';
+  for (var i = 1; i <= pages; i++) {
+    html += '<button class="btn ' + (i === page ? "btn-primary" : "btn-outline-secondary") + ' btn-sm" onclick="' + action + '(' + i + ')">' + i + '</button>';
+  }
+  html += '<button class="btn btn-outline-secondary btn-sm" onclick="' + action + '(' + Math.min(pages, page + 1) + ')" ' + (page >= pages ? "disabled" : "") + '>下一页</button></div>';
+  return html;
+}
+
+async function loadDashboard() {
+  var myCourses = await api("/student/my-courses");
+  var grades = await api("/student/grades");
+  var scored = grades.filter(function(x) { return x.score != null; });
+  var avg = scored.length ? (scored.reduce(function(a, b) { return a + b.score; }, 0) / scored.length) : 0;
+  var pending = grades.filter(function(x) { return x.status === "PENDING" || x.status === "SUBMITTED"; }).length;
+
+  document.getElementById("kpiGrid").innerHTML = [
+    { label: "已选课程", value: myCourses.length, color: "var(--accent)", tab: "courses" },
+    { label: "已评分作业", value: scored.length, color: "var(--accent-2)", tab: "grades" },
+    { label: "平均分", value: avg.toFixed(1), color: "var(--accent-3)", tab: "grades" },
+    { label: "待提交", value: pending, color: "var(--accent-4)", tab: "assignments" }
+  ].map(function(k) { return '<div class="kpi" role="button" tabindex="0" onclick="switchTab(\'' + k.tab + '\')" onkeydown="handleKpiKey(event, \'' + k.tab + '\')" style="border-left:4px solid ' + k.color + '"><div class="value">' + k.value + '</div><div class="label">' + k.label + '</div></div>'; }).join("");
+
+  var chartEl = document.getElementById("chartScores");
+  var chart = echarts.getInstanceByDom(chartEl) || echarts.init(chartEl);
+  chart.setOption({
+    tooltip: {},
+    grid: { left: 40, right: 16, top: 20, bottom: 24 },
+    xAxis: { type: "category", data: scored.map(function(x) { return x.assignmentTitle || "作业"; }) },
+    yAxis: { type: "value", min: 0, max: 100 },
+    series: [{ type: "line", data: scored.map(function(x) { return x.score; }), smooth: true, areaStyle: { opacity: 0.2 }, lineStyle: { color: "#2563eb", width: 2 }, itemStyle: { color: "#2563eb" } }]
+  });
+
+  var recentHtml = '<div class="section-head"><h5 class="mb-0">最近成绩</h5></div>';
+  if (scored.length) {
+    recentHtml += '<div class="table-wrap">' + scored.slice(0, 6).map(function(x) {
+      return '<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><div class="fw-semibold">' + App.escapeHtml(x.assignmentTitle || "-") + '</div><div class="small text-muted">' + App.escapeHtml(x.courseName || "") + '</div></div><span class="badge-soft bg-primary bg-opacity-10 text-primary fw-bold" style="font-size:16px">' + x.score + '</span></div>';
+    }).join("") + "</div>";
+  } else {
+    recentHtml += '<div class="text-muted text-center py-4">暂无成绩</div>';
+  }
+  document.getElementById("recentBox").innerHTML = recentHtml;
+}
+
+async function loadCourses() {
+  var courses = await api("/student/courses");
+  var myCourses = await api("/student/my-courses");
+  var myIds = {};
+  myCourses.forEach(function(c) { myIds[c.id] = true; });
+  var pages = Math.max(1, Math.ceil(courses.length / pageSize));
+  if (coursePage > pages) coursePage = pages;
+  var start = (coursePage - 1) * pageSize;
+  var pageCourses = courses.slice(start, start + pageSize);
+  document.getElementById("courseBox").innerHTML = '<div class="section-head"><h5 class="mb-0">课程列表</h5></div><div class="table-wrap"><table class="table table-hover align-middle"><thead><tr><th>课程</th><th>教师</th><th>时间</th><th>学分</th><th>容量</th><th></th></tr></thead><tbody>' +
+    pageCourses.map(function(c) {
+      var enrolled = myIds[c.id];
+      return '<tr><td><span class="fw-semibold">' + App.escapeHtml(c.name) + '</span></td><td>' + App.escapeHtml(c.teacher ? c.teacher.displayName : "-") + '</td><td>' + App.escapeHtml(c.schedule || "-") + '</td><td>' + (c.credits || "-") + '</td><td>' + (c.enrolledCount || 0) + '/' + (c.maxStudents || 50) + '</td><td>' +
+        (enrolled ? '<span class="badge-soft bg-success bg-opacity-10 text-success"><i class="fa-solid fa-check me-1"></i>已选</span>' : '<button class="btn btn-primary btn-sm" onclick="enrollCourse(' + c.id + ')"><i class="fa-solid fa-plus me-1"></i>选课</button>') + '</td></tr>';
+    }).join("") + "</tbody></table>" + renderPager(courses.length, coursePage, "courses", "goCoursePage") + "</div>";
+}
+
+function goCoursePage(page) {
+  coursePage = page;
+  loadCourses();
+}
+
+async function enrollCourse(id) {
+  await api("/student/enroll/" + id, "POST");
+  loadCourses();
+  loadDashboard();
+}
+
+async function loadAssignments() {
+  var courses = await api("/student/my-courses");
+  var grades = await api("/student/grades");
+  assignmentSubmissions = {};
+  grades.forEach(function(g) { if (g.assignmentId) assignmentSubmissions[g.assignmentId] = g; });
+  var rows = [];
+  for (var ci = 0; ci < courses.length; ci++) {
+    var c = courses[ci];
+    var assignments = await api("/student/courses/" + c.id + "/assignments");
+    assignments.forEach(function(a) { rows.push({ course: c, assignment: a, submission: assignmentSubmissions[a.id] }); });
+  }
+  var pages = Math.max(1, Math.ceil(rows.length / pageSize));
+  if (assignmentPage > pages) assignmentPage = pages;
+  var start = (assignmentPage - 1) * pageSize;
+  var pageRows = rows.slice(start, start + pageSize);
+  var html = "";
+  var currentCourseId = null;
+  pageRows.forEach(function(row, index) {
+    var c = row.course;
+    var a = row.assignment;
+    if (currentCourseId !== c.id) {
+      if (currentCourseId !== null) html += "</tbody></table></div>";
+      currentCourseId = c.id;
+      html += '<div class="section-head mt-3"><h5 class="mb-0"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name) + "</h5></div>" +
+        '<div class="table-wrap"><table class="table table-sm"><thead><tr><th>标题</th><th>截止时间</th><th>满分</th><th>附件</th><th>提交内容</th><th></th></tr></thead><tbody>';
+    }
+    var submitted = row.submission && row.submission.content ? App.escapeHtml(row.submission.content) : "-";
+    html += '<tr><td>' + App.escapeHtml(a.title) + '</td><td>' + App.fmtTime(a.dueDate) + '</td><td>' + (a.totalPoints || 100) + '</td><td>' + App.escapeHtml(a.attachmentPaths || "-") + '</td><td>' + submitted + '</td><td><button class="btn btn-outline-primary btn-sm" data-title="' + App.escapeAttr(a.title || "") + '" onclick="openSubmit(' + a.id + ', this.dataset.title)"><i class="fa-solid fa-upload me-1"></i>' + (row.submission ? '重新提交' : '提交') + '</button></td></tr>';
+    if (index === pageRows.length - 1) html += "</tbody></table>" + renderPager(rows.length, assignmentPage, "assignments", "goAssignmentPage") + "</div>";
+  });
+  if (!html) html = '<div class="text-muted text-center py-5">暂无作业</div><div class="table-wrap mt-3">' + renderPager(rows.length, assignmentPage, "assignments", "goAssignmentPage") + '</div>';
+  document.getElementById("assignmentBox").innerHTML = html;
+}
+
+function goAssignmentPage(page) {
+  assignmentPage = page;
+  loadAssignments();
+}
+
+function openSubmit(id, title) {
+  var submission = assignmentSubmissions[id];
+  submitAssignmentId.value = id;
+  submitTitle.textContent = title;
+  submitContent.value = submission && submission.content ? submission.content : "";
+  submittedPreview.innerHTML = submission && submission.content ? '已提交内容：' + App.escapeHtml(submission.content) : '当前暂无提交内容';
+  submitFile.value = "";
+  new bootstrap.Modal(submitModal).show();
+}
+
+async function submitAssignment() {
+  var id = submitAssignmentId.value;
+  var filePath = null;
+  var fileName = null;
+  if (submitFile.files.length) {
+    var fd = new FormData();
+    fd.append("file", submitFile.files[0]);
+    var res = await fetch("/api/files/upload", { method: "POST", headers: { Authorization: "Bearer " + TOKEN }, body: fd });
+    var data = await res.json();
+    if (!data.success) throw new Error(data.message || "上传失败");
+    filePath = data.data.path;
+    fileName = data.data.originalName;
+  }
+  await api("/student/assignments/" + id + "/submit", "POST", {
+    content: submitContent.value.trim(),
+    filePath: filePath,
+    fileName: fileName
+  });
+  bootstrap.Modal.getInstance(submitModal).hide();
+  loadDashboard();
+}
+
+async function loadGrades() {
+  var grades = await api("/student/grades");
+  var pages = Math.max(1, Math.ceil(grades.length / pageSize));
+  if (gradePage > pages) gradePage = pages;
+  var start = (gradePage - 1) * pageSize;
+  var pageGrades = grades.slice(start, start + pageSize);
+  document.getElementById("gradeBox").innerHTML = '<div class="section-head"><h5 class="mb-0">成绩列表</h5></div><div class="table-wrap"><table class="table table-hover align-middle"><thead><tr><th>课程</th><th>作业</th><th>状态</th><th>提交内容</th><th>分数</th><th>评语</th></tr></thead><tbody>' +
+    pageGrades.map(function(g) {
+      var statusBadge = g.status === "GRADED" ? "bg-success bg-opacity-10 text-success" : g.status === "SUBMITTED" ? "bg-warning bg-opacity-10 text-warning" : "bg-secondary bg-opacity-10 text-secondary";
+      return "<tr><td>" + App.escapeHtml(g.courseName || "-") + "</td><td>" + App.escapeHtml(g.assignmentTitle || "-") + '</td><td><span class="badge-soft ' + statusBadge + '">' + App.escapeHtml(g.status || "未提交") + '</span></td><td>' + App.escapeHtml(g.content || "-") + '</td><td><span class="fw-bold">' + (g.score != null ? g.score : "-") + "</span></td><td>" + App.escapeHtml(g.teacherComment || "-") + "</td></tr>";
+    }).join("") + "</tbody></table>" + renderPager(grades.length, gradePage, "grades", "goGradePage") + "</div>";
+}
+
+function goGradePage(page) {
+  gradePage = page;
+  loadGrades();
+}
+
+loadDashboard();
+</script>
+</body>
+</html>

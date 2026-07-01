@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info:
+  title: Education Manager API
+  version: 1.0.0
+servers:
+  - url: /api
+paths:
+  /auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+      responses:
+        '200':
+          description: Success
+  /admin/dashboard:
+    get:
+      summary: Admin dashboard stats
+  /student/my-courses:
+    get:
+      summary: Student courses
+  /teacher/courses:
+    get:
+      summary: Teacher courses

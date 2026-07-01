@@ -1,0 +1,20 @@
+# 构建产物
+/target/
+/dist/
+
+# 运行时上传的附件（模块4）
+/uploads/
+
+# Local / generated artifacts
+logs/
+*.log
+*.zip
+*.docx
+apache-maven-*/
+.claude/
+
+# IDE / 系统
+.idea/
+*.iml
+.vscode/
+.DS_Store

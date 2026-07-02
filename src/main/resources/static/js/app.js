@@ -1,5 +1,25 @@
 window.App = (function () {
   const THEME_KEY = "sms-theme";
+  const ROLE_MARKER_META = {
+    admin: {
+      label: "管理中枢",
+      badge: "系统控制台",
+      iconClass: "fa-solid fa-terminal",
+      accentClass: "fa-solid fa-gear"
+    },
+    teacher: {
+      label: "教学批改台",
+      badge: "成绩批阅板",
+      iconClass: "fa-solid fa-chalkboard",
+      accentClass: "fa-solid fa-pen-nib"
+    },
+    student: {
+      label: "学习任务栏",
+      badge: "作业已就绪",
+      iconClass: "fa-solid fa-file-circle-check",
+      accentClass: "fa-solid fa-check"
+    }
+  };
   let ws = null;
   let notifList = [];
 
@@ -7,6 +27,7 @@ window.App = (function () {
     const saved = localStorage.getItem(THEME_KEY) || "light";
     document.documentElement.setAttribute("data-theme", saved);
     updateThemeIcon(saved);
+    initRoleIdentityMarker();
   }
 
   function toggleTheme() {
@@ -29,6 +50,54 @@ window.App = (function () {
       '<span class="crumb ' + (i === items.length - 1 ? "active" : "") + '">' + it + "</span>" +
       (i < items.length - 1 ? '<span class="sep">/</span>' : "")
     ).join("");
+  }
+
+  function initRoleIdentityMarker() {
+    const role = (document.body && document.body.dataset && document.body.dataset.role || "").toLowerCase();
+    const meta = ROLE_MARKER_META[role];
+    if (!meta) return;
+    const topbar = document.querySelector(".topbar");
+    if (!topbar || topbar.querySelector(".topbar-role-slot")) return;
+
+    const children = Array.from(topbar.children);
+    if (children.length < 2) return;
+
+    const slot = document.createElement("div");
+    slot.className = "topbar-role-slot";
+
+    const marker = document.createElement("div");
+    marker.className = "role-identity-marker";
+    marker.setAttribute("tabindex", "0");
+    marker.setAttribute("aria-label", meta.badge + " · " + meta.label);
+
+    const iconWrap = document.createElement("div");
+    iconWrap.className = "role-identity-icon";
+
+    const mainIcon = document.createElement("i");
+    mainIcon.className = meta.iconClass;
+
+    const accentIcon = document.createElement("i");
+    accentIcon.className = "role-identity-accent " + meta.accentClass;
+
+    const textWrap = document.createElement("div");
+    textWrap.className = "role-identity-copy";
+
+    const badge = document.createElement("div");
+    badge.className = "role-identity-badge";
+    badge.textContent = meta.badge;
+
+    const label = document.createElement("div");
+    label.className = "role-identity-label";
+    label.textContent = meta.label;
+
+    iconWrap.appendChild(mainIcon);
+    iconWrap.appendChild(accentIcon);
+    textWrap.appendChild(badge);
+    textWrap.appendChild(label);
+    marker.appendChild(iconWrap);
+    marker.appendChild(textWrap);
+    slot.appendChild(marker);
+    topbar.insertBefore(slot, children[1]);
   }
 
   function skeletonTable(rows) {
@@ -190,6 +259,7 @@ window.App = (function () {
 
   return {
     initTheme: initTheme,
+    initRoleIdentityMarker: initRoleIdentityMarker,
     toggleTheme: toggleTheme,
     setBreadcrumb: setBreadcrumb,
     skeletonTable: skeletonTable,

@@ -1,5 +1,6 @@
 package com.sms.service;
 
+import com.sms.dto.GradeSubmissionRequest;
 import com.sms.model.*;
 import com.sms.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class TeacherService {
     private final EnrollmentRepository enrollmentRepository;
     private final PeerReviewRepository peerReviewRepository;
     private final NotificationService notificationService;
+    private final TeacherCommentMemoryService teacherCommentMemoryService;
 
     public List<Course> getMyCourses(User teacher) {
         return courseRepository.findByTeacher(teacher);
@@ -96,18 +98,24 @@ public class TeacherService {
     }
 
     @Transactional
-    public Submission gradeSubmission(Long submissionId, Double score, String comment) {
+    public Submission gradeSubmission(Long submissionId, GradeSubmissionRequest request, User teacher) {
+        Double score = request == null ? null : request.getScore();
         if (score == null || score < 0 || score > 100) {
             throw new RuntimeException("成绩必须在 0 到 100 之间");
         }
         Submission sub = submissionRepository.findById(submissionId)
             .orElseThrow(() -> new RuntimeException("提交记录不存在"));
+        Assignment assignment = sub.getAssignment();
+        if (teacher.getRole() != RoleType.ADMIN && !assignment.getTeacher().getId().equals(teacher.getId())) {
+            throw new RuntimeException("无权评分该提交记录");
+        }
+
+        String comment = request.getComment() == null ? "" : request.getComment().trim();
         sub.setScore(score);
         sub.setTeacherComment(comment);
         sub.setStatus(AssignmentStatus.GRADED);
         sub.setGradedAt(LocalDateTime.now());
 
-        Assignment assignment = sub.getAssignment();
         enrollmentRepository.findByStudentAndCourse(sub.getStudent(), assignment.getCourse())
             .ifPresent(e -> {
                 e.setBaseScore(score);
@@ -117,6 +125,10 @@ public class TeacherService {
                 e.setScore(score + e.getPeerReviewBonus());
                 enrollmentRepository.save(e);
             });
+
+        if (teacher.getRole() == RoleType.TEACHER && !comment.isBlank()) {
+            teacherCommentMemoryService.recordUsage(teacher, sub, score, comment, request.getQuickCommentId());
+        }
 
         notificationService.notify(sub.getStudent().getUsername(), "GRADE",
             "作业已评分：" + assignment.getTitle(),

@@ -1,6 +1,7 @@
 package com.sms.controller;
 
 import com.sms.dto.ApiResponse;
+import com.sms.dto.GradeSubmissionRequest;
 import com.sms.model.Assignment;
 import com.sms.model.Course;
 import com.sms.model.User;
@@ -100,11 +101,10 @@ public class TeacherController {
 
     @PostMapping("/submissions/{id}/grade")
     public ApiResponse<?> gradeSubmission(@PathVariable Long id,
-                                           @RequestBody Map<String, Object> body) {
-        Double score = Double.parseDouble(body.get("score").toString());
-        String comment = (String) body.getOrDefault("comment", "");
+                                           @RequestBody GradeSubmissionRequest request,
+                                           Authentication auth) {
         return ApiResponse.ok("评分成功",
-            teacherService.gradeSubmission(id, score, comment));
+            teacherService.gradeSubmission(id, request, getCurrentUser(auth)));
     }
 
     // ========= 成绩分析 =========

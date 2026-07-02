@@ -7,7 +7,7 @@
   <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js?v=20240630"></script>
-  <link href="/css/app.css?v=20260702" rel="stylesheet">
+  <link href="/css/app.css?v=20260703" rel="stylesheet">
 </head>
 <body class="page-shell" data-role="teacher">
 <div class="dashboard-shell">
@@ -155,8 +155,48 @@
   </div>
 </div>
 
+<div class="modal fade" id="gradeModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">批改作业</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="gradeSubmissionId">
+        <input type="hidden" id="gradeQuickCommentId">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label" for="gradeScore">分数</label>
+            <input id="gradeScore" type="number" class="form-control" min="0" max="100" step="0.5" placeholder="0-100">
+          </div>
+          <div class="col-md-8">
+            <label class="form-label" for="gradeStudentName">学生</label>
+            <input id="gradeStudentName" class="form-control" disabled>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="gradeComment">评语</label>
+            <textarea id="gradeComment" class="form-control" rows="4" placeholder="请输入批改评语"></textarea>
+          </div>
+          <div class="col-12">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+              <div class="fw-semibold">快捷评语</div>
+              <div class="btn-group btn-group-sm" role="group">
+                <button class="btn btn-outline-primary active" type="button" data-category="" onclick="loadQuickComments()">全部</button>
+                <button class="btn btn-outline-primary" type="button" data-category="ENCOURAGEMENT" onclick="loadQuickComments('ENCOURAGEMENT')">鼓励</button>
+                <button class="btn btn-outline-primary" type="button" data-category="CORRECTION" onclick="loadQuickComments('CORRECTION')">纠错</button>
+                <button class="btn btn-outline-primary" type="button" data-category="SCORE_IMPROVEMENT" onclick="loadQuickComments('SCORE_IMPROVEMENT')">提分</button>
+              </div>
+            </div>
+            <div id="quickCommentBox" class="d-flex flex-wrap gap-2"></div>
+            <div class="form-text">常用评语会自动记忆，并按你的使用频率排序。</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="submitGrade()">提交评分</button></div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
-<script src="/js/app.js?v=20240630"></script>
+<script src="/js/app.js?v=20260703"></script>
 <script>
 window.TOKEN = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
 if (!TOKEN) location.href = "/login.html";
@@ -170,6 +210,9 @@ document.getElementById("heroName").textContent = displayName;
 var tabs = Array.from(document.querySelectorAll(".nav-item"));
 var teacherCourses = [];
 var teacherAssignments = [];
+var gradingSubmissionMeta = {};
+var quickCommentCategory = null;
+var currentGradeRow = null;
 tabs.forEach(function(el) { el.addEventListener("click", function() { switchTab(el.dataset.tab); }); });
 function switchTab(tab) {
   tabs.forEach(function(x) { x.classList.toggle("active", x.dataset.tab === tab); });
@@ -427,6 +470,7 @@ async function savePeerConfig() {
 
 async function loadGrading() {
   var courses = await api("/teacher/courses");
+  gradingSubmissionMeta = {};
   var html = '<div class="section-head"><h5 class="mb-0">评分任务</h5></div>';
   var hasGrading = false;
   for (var ci = 0; ci < courses.length; ci++) {
@@ -441,7 +485,13 @@ async function loadGrading() {
       subs.forEach(function(s) {
         var submittedContent = s.content ? App.escapeHtml(s.content) : '-';
         if (s.filePaths) submittedContent += '<div class="small text-muted mt-1">附件：' + App.escapeHtml(s.filePaths) + '</div>';
-        html += '<tr><td>' + App.escapeHtml(s.student ? (s.student.displayName || s.student.username) : '-') + '</td><td>' + submittedContent + '</td><td>' + (s.status === 'SUBMITTED' ? '<span class="badge-soft bg-warning bg-opacity-10 text-warning">待评分</span>' : s.status === 'GRADED' ? '<span class="badge-soft bg-success bg-opacity-10 text-success">已评分</span>' : App.escapeHtml(s.status)) + '</td><td><span class="fw-semibold">' + (s.score != null ? s.score : '-') + '</span></td><td><button class="btn btn-outline-primary btn-sm" onclick="gradeSubmission(' + s.id + ')"><i class="fa-solid fa-pen"></i> 评分</button></td></tr>';
+        var studentName = s.student ? (s.student.displayName || s.student.username) : '-';
+        gradingSubmissionMeta[s.id] = {
+          studentName: studentName,
+          teacherComment: s.teacherComment || '',
+          score: s.score
+        };
+        html += '<tr><td>' + App.escapeHtml(studentName) + '</td><td>' + submittedContent + '</td><td>' + (s.status === 'SUBMITTED' ? '<span class="badge-soft bg-warning bg-opacity-10 text-warning">待评分</span>' : s.status === 'GRADED' ? '<span class="badge-soft bg-success bg-opacity-10 text-success">已评分</span>' : App.escapeHtml(s.status)) + '</td><td><span class="fw-semibold">' + (s.score != null ? s.score : '-') + '</span></td><td><button class="btn btn-outline-primary btn-sm" onclick="openGradeModal(' + s.id + ')"><i class="fa-solid fa-pen"></i> 评分</button></td></tr>';
       });
       html += '</tbody></table></div>';
     }
@@ -449,15 +499,70 @@ async function loadGrading() {
   document.getElementById("gradingBox").innerHTML = hasGrading ? html : '<div class="text-muted text-center py-5">暂无待评分作业</div>';
 }
 
-async function gradeSubmission(id) {
-  var score = prompt("输入分数（0-100）：");
-  if (score === null) return;
-  var num = Number(score);
-  if (isNaN(num) || num < 0 || num > 100) {
-    alert("分数必须在0-100之间");
+async function loadQuickComments(category) {
+  if (category === undefined) category = quickCommentCategory;
+  quickCommentCategory = category || null;
+  document.querySelectorAll('#gradeModal .btn-group .btn').forEach(function(btn) {
+    var btnCategory = btn.dataset.category || '';
+    btn.classList.toggle('active', btnCategory === (quickCommentCategory || ''));
+  });
+  var query = quickCommentCategory ? ('?category=' + encodeURIComponent(quickCommentCategory)) : '';
+  var list = await api('/teacher/comment-memories' + query);
+  var box = document.getElementById('quickCommentBox');
+  if (!list.length) {
+    box.innerHTML = '<div class="text-muted small">暂无快捷评语，提交批改后会自动记忆常用评语。</div>';
     return;
   }
-  await api("/teacher/submissions/" + id + "/grade", "POST", { score: num, comment: "" });
+  box.innerHTML = list.map(function(item) {
+    gradingSubmissionMeta['comment:' + item.id] = item.commentText || '';
+    return '<button type="button" class="btn btn-outline-primary btn-sm text-start" onclick="applyQuickComment(' + item.id + ')">' +
+      '<span class="d-block fw-semibold">' + App.escapeHtml(mapCommentCategory(item.category)) + '</span>' +
+      '<span class="d-block small text-muted">使用 ' + (item.usageCount || 0) + ' 次</span>' +
+      '<span class="d-block mt-1">' + App.escapeHtml(item.commentText || '') + '</span>' +
+      '</button>';
+  }).join('');
+}
+
+function mapCommentCategory(category) {
+  return {
+    ENCOURAGEMENT: '鼓励',
+    CORRECTION: '纠错',
+    SCORE_IMPROVEMENT: '提分'
+  }[category] || '快捷评语';
+}
+
+function applyQuickComment(id) {
+  gradeQuickCommentId.value = id;
+  gradeComment.value = gradingSubmissionMeta['comment:' + id] || '';
+}
+
+async function openGradeModal(id) {
+  var meta = gradingSubmissionMeta[id] || {};
+  gradeSubmissionId.value = id;
+  gradeStudentName.value = meta.studentName || '';
+  gradeComment.value = meta.teacherComment || '';
+  gradeScore.value = meta.score == null ? '' : meta.score;
+  gradeQuickCommentId.value = '';
+  quickCommentCategory = null;
+  await loadQuickComments(null);
+  currentGradeRow = new bootstrap.Modal(gradeModal);
+  currentGradeRow.show();
+}
+
+async function submitGrade() {
+  var id = Number(gradeSubmissionId.value);
+  var num = Number(gradeScore.value);
+  if (isNaN(num) || num < 0 || num > 100) {
+    alert('分数必须在0-100之间');
+    return;
+  }
+  var payload = {
+    score: num,
+    comment: gradeComment.value.trim(),
+    quickCommentId: gradeQuickCommentId.value ? Number(gradeQuickCommentId.value) : null
+  };
+  await api('/teacher/submissions/' + id + '/grade', 'POST', payload);
+  if (currentGradeRow) currentGradeRow.hide();
   loadGrading();
   loadAnalysis();
 }

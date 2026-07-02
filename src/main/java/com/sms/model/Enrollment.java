@@ -30,5 +30,11 @@ public class Enrollment {
     private LocalDateTime enrolledAt = LocalDateTime.now();
 
     @Builder.Default
-    private double score = -1; // -1 means not graded yet
+    private double score = -1; // total score
+
+    @Builder.Default
+    private double baseScore = -1;
+
+    @Builder.Default
+    private double peerReviewBonus = 0;
 }

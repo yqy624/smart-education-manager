@@ -16,13 +16,14 @@
       <div class="brand-mark"><i class="fa-solid fa-chalkboard-user"></i></div>
       <div>
         <div class="fw-bold">教师工作台</div>
-        <div class="small text-white-50">课程、作业、评分</div>
+        <div class="small text-white-50">课程、作业、互评、评分</div>
       </div>
     </div>
     <div class="nav-item active" data-tab="dashboard"><i class="fa-solid fa-chart-line"></i> 概览</div>
     <div class="nav-item" data-tab="courses"><i class="fa-solid fa-book"></i> 课程</div>
     <div class="nav-item" data-tab="students"><i class="fa-solid fa-user-graduate"></i> 学生</div>
     <div class="nav-item" data-tab="assignments"><i class="fa-solid fa-file-circle-plus"></i> 作业</div>
+    <div class="nav-item" data-tab="peer-review"><i class="fa-solid fa-comments"></i> 互评</div>
     <div class="nav-item" data-tab="grading"><i class="fa-solid fa-pen-nib"></i> 评分</div>
     <div class="nav-item" data-tab="analysis"><i class="fa-solid fa-chart-column"></i> 分析</div>
   </aside>
@@ -52,7 +53,7 @@
       <div class="hero-banner mb-3">
         <div class="eyebrow"><i class="fa-solid fa-chalkboard-user"></i> 教师工作台</div>
         <div class="title">欢迎回来，<span id="heroName">教师</span></div>
-        <div class="desc">管理您的课程，发布作业与考试，查看学生成绩与分析。</div>
+        <div class="desc">管理课程与作业，开放匿名互评，查看学生参与情况和成绩分析。</div>
       </div>
       <div class="kpi-grid mb-3" id="kpiGrid"></div>
       <div class="row g-3">
@@ -63,6 +64,7 @@
     <section id="view-courses" class="view d-none"><div class="section-card" id="courseBox"></div></section>
     <section id="view-students" class="view d-none"><div class="section-card" id="studentBox"></div></section>
     <section id="view-assignments" class="view d-none"><div class="section-card" id="assignmentBox"></div></section>
+    <section id="view-peer-review" class="view d-none"><div class="section-card" id="peerReviewManageBox"></div></section>
     <section id="view-grading" class="view d-none"><div class="section-card" id="gradingBox"></div></section>
     <section id="view-analysis" class="view d-none"><div class="section-card" id="analysisBox"></div></section>
   </main>
@@ -128,6 +130,31 @@
   </div>
 </div>
 
+<div class="modal fade" id="peerConfigModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">互评配置</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="peerConfigAssignmentId">
+        <div class="mb-3 fw-semibold" id="peerConfigTitle"></div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="peerEnabled">
+          <label class="form-check-label" for="peerEnabled">开启匿名互评</label>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label" for="peerOpenAt">开放时间</label><input id="peerOpenAt" type="datetime-local" class="form-control"></div>
+          <div class="col-md-6"><label class="form-label" for="peerCloseAt">截止时间</label><input id="peerCloseAt" type="datetime-local" class="form-control"></div>
+          <div class="col-md-4"><label class="form-label" for="peerRequiredCount">每人互评次数</label><input id="peerRequiredCount" type="number" class="form-control" value="1" min="1"></div>
+          <div class="col-md-4"><label class="form-label" for="peerBonusPerReview">每次加分</label><input id="peerBonusPerReview" type="number" class="form-control" value="1" min="0" step="0.5"></div>
+          <div class="col-md-4"><label class="form-label" for="peerBonusCap">加分上限</label><input id="peerBonusCap" type="number" class="form-control" value="1" min="0" step="0.5"></div>
+          <div class="col-12"><label class="form-label" for="peerPrompt">互评提示</label><textarea id="peerPrompt" class="form-control" rows="4" placeholder="告诉学生应从哪些方面进行匿名评价"></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="savePeerConfig()">保存配置</button></div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
 <script src="/js/app.js?v=20240630"></script>
 <script>
@@ -142,17 +169,19 @@ document.getElementById("heroName").textContent = displayName;
 
 var tabs = Array.from(document.querySelectorAll(".nav-item"));
 var teacherCourses = [];
+var teacherAssignments = [];
 tabs.forEach(function(el) { el.addEventListener("click", function() { switchTab(el.dataset.tab); }); });
 function switchTab(tab) {
   tabs.forEach(function(x) { x.classList.toggle("active", x.dataset.tab === tab); });
   document.querySelectorAll(".view").forEach(function(v) { v.classList.add("d-none"); });
   document.getElementById("view-" + tab).classList.remove("d-none");
-  var title = {dashboard:"概览", courses:"课程管理", students:"学生管理", assignments:"作业管理", grading:"评分", analysis:"分析"}[tab];
+  var title = {dashboard:"概览", courses:"课程管理", students:"学生管理", assignments:"作业管理", "peer-review":"互评管理", grading:"评分", analysis:"分析"}[tab];
   document.getElementById("titleText").textContent = title;
   App.setBreadcrumb(["教师工作台", title]);
   if (tab === "courses") loadCourses();
   if (tab === "students") loadStudents();
   if (tab === "assignments") loadAssignments();
+  if (tab === "peer-review") loadPeerReviewManage();
   if (tab === "grading") loadGrading();
   if (tab === "analysis") loadAnalysis();
 }
@@ -213,11 +242,16 @@ async function loadDashboard() {
   var courses = await api("/teacher/courses");
   var totalStudents = courses.reduce(function(a, c) { return a + (c.enrolledCount || 0); }, 0);
   var activeCourses = courses.filter(function(c) { return (c.enrolledCount || 0) > 0; }).length;
+  var peerEnabled = 0;
+  for (var ci = 0; ci < courses.length; ci++) {
+    var list = await api("/teacher/courses/" + courses[ci].id + "/assignments");
+    peerEnabled += list.filter(function(a) { return a.peerReviewEnabled; }).length;
+  }
   document.getElementById("kpiGrid").innerHTML = [
     { label: "负责课程", value: courses.length, color: "var(--accent)", tab: "courses" },
     { label: "学生总数", value: totalStudents, color: "var(--accent-2)", tab: "students" },
-    { label: "有学生课程", value: activeCourses, color: "var(--accent-3)", tab: "analysis" },
-    { label: "总容量", value: courses.reduce(function(a, c) { return a + (c.maxStudents || 0); }, 0), color: "var(--accent-4)", tab: "assignments" }
+    { label: "已开互评", value: peerEnabled, color: "var(--accent-3)", tab: "peer-review" },
+    { label: "有学生课程", value: activeCourses, color: "var(--accent-4)", tab: "analysis" }
   ].map(function(k) { return '<div class="kpi" role="button" tabindex="0" onclick="switchTab(\'' + k.tab + '\')" onkeydown="handleKpiKey(event, \'' + k.tab + '\')" style="border-left:4px solid ' + k.color + '"><div class="value">' + k.value + '</div><div class="label">' + k.label + '</div></div>'; }).join("");
 
   var chartEl = document.getElementById("chartCourses");
@@ -232,7 +266,7 @@ async function loadDashboard() {
 
   document.getElementById("recentActivityList").innerHTML = courses.length
     ? courses.slice(0, 5).map(function(c) {
-        return '<div class="d-flex justify-content-between py-2 border-bottom"><span><i class="fa-solid fa-book-open me-2" style="color:var(--accent-2)"></i>' + c.name + '</span><span class="badge-soft bg-light">' + (c.enrolledCount || 0) + " 人" + '</span></div>';
+        return '<div class="d-flex justify-content-between py-2 border-bottom"><span><i class="fa-solid fa-book-open me-2" style="color:var(--accent-2)"></i>' + App.escapeHtml(c.name) + '</span><span class="badge-soft bg-light">' + (c.enrolledCount || 0) + ' 人</span></div>';
       }).join("")
     : '<div class="text-center py-3">暂无课程数据</div>';
 }
@@ -244,10 +278,10 @@ async function loadCourses() {
   courses.forEach(function(c) {
     html += '<tr><td><span class="fw-semibold">' + App.escapeHtml(c.name) + '</span></td><td>' + App.escapeHtml(c.description || "-") + '</td><td>' + App.escapeHtml(c.schedule || "-") + '</td><td>' + (c.credits || "-") + '</td><td>' + (c.enrolledCount || 0) + '/' + (c.maxStudents || 50) + '</td><td><button class="btn btn-outline-primary btn-sm me-1" onclick="openCourseModal(' + c.id + ')"><i class="fa-solid fa-pen"></i> 编辑</button><button class="btn btn-outline-danger btn-sm" onclick="deleteCourse(' + c.id + ')"><i class="fa-solid fa-trash"></i></button></td></tr>';
   });
-  html += "</tbody></table></div>";
+  html += '</tbody></table></div>';
   document.getElementById("courseBox").innerHTML = html;
   var sel = document.getElementById("assignCourse");
-  sel.innerHTML = courses.map(function(c) { return '<option value="' + c.id + '">' + c.name + "</option>"; }).join("");
+  sel.innerHTML = courses.map(function(c) { return '<option value="' + c.id + '">' + App.escapeHtml(c.name) + '</option>'; }).join("");
 }
 
 function openCourseModal(id) {
@@ -280,7 +314,11 @@ async function saveCourse() {
   loadDashboard();
 }
 
-async function deleteCourse(id) { await api("/teacher/courses/" + id, "DELETE"); loadCourses(); loadDashboard(); }
+async function deleteCourse(id) {
+  await api("/teacher/courses/" + id, "DELETE");
+  loadCourses();
+  loadDashboard();
+}
 
 async function loadStudents() {
   var courses = await api("/teacher/courses");
@@ -291,29 +329,34 @@ async function loadStudents() {
     var students = await api("/teacher/courses/" + c.id + "/students");
     if (!students.length) continue;
     hasStudents = true;
-    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name || "-") + '</h6><table class="table table-sm table-hover align-middle"><thead><tr><th>学生姓名</th><th>用户名</th><th>邮箱</th></tr></thead><tbody>';
+    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name || '-') + '</h6><table class="table table-sm table-hover align-middle"><thead><tr><th>学生姓名</th><th>用户名</th><th>邮箱</th></tr></thead><tbody>';
     students.forEach(function(s) {
-      html += '<tr><td>' + App.escapeHtml(s.displayName || "-") + '</td><td>' + App.escapeHtml(s.username || "-") + '</td><td>' + App.escapeHtml(s.email || "-") + '</td></tr>';
+      html += '<tr><td>' + App.escapeHtml(s.displayName || '-') + '</td><td>' + App.escapeHtml(s.username || '-') + '</td><td>' + App.escapeHtml(s.email || '-') + '</td></tr>';
     });
-    html += "</tbody></table></div>";
+    html += '</tbody></table></div>';
   }
   document.getElementById("studentBox").innerHTML = hasStudents ? html : '<div class="text-muted text-center py-5">暂无学生数据</div>';
 }
 
 async function loadAssignments() {
   var courses = await api("/teacher/courses");
+  teacherAssignments = [];
   var html = '<div class="section-head"><h5 class="mb-0">作业管理</h5><button class="btn btn-primary btn-sm" onclick="new bootstrap.Modal(assignModal).show()">发布作业</button></div>';
+  var hasData = false;
   for (var ci = 0; ci < courses.length; ci++) {
     var c = courses[ci];
     var list = await api("/teacher/courses/" + c.id + "/assignments");
+    list.forEach(function(a) { teacherAssignments.push(a); });
     if (!list.length) continue;
-    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name) + '</h6><table class="table table-sm"><thead><tr><th>标题</th><th>截止</th><th>满分</th><th>提交数</th></tr></thead><tbody>';
+    hasData = true;
+    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name) + '</h6><table class="table table-sm"><thead><tr><th>标题</th><th>截止</th><th>满分</th><th>互评</th><th>提交数</th></tr></thead><tbody>';
     list.forEach(function(a) {
-      html += '<tr><td>' + App.escapeHtml(a.title) + '</td><td>' + App.fmtTime(a.dueDate) + '</td><td>' + (a.totalPoints || 100) + '</td><td>' + (a.submissionCount || 0) + '</td></tr>';
+      var status = a.peerReviewEnabled ? '<span class="badge-soft bg-info bg-opacity-10 text-info">已开启</span>' : '<span class="badge-soft bg-secondary bg-opacity-10 text-secondary">未开启</span>';
+      html += '<tr><td>' + App.escapeHtml(a.title) + '</td><td>' + App.fmtTime(a.dueDate) + '</td><td>' + (a.totalPoints || 100) + '</td><td>' + status + '</td><td>' + (a.submissionCount || 0) + '</td></tr>';
     });
-    html += "</tbody></table></div>";
+    html += '</tbody></table></div>';
   }
-  document.getElementById("assignmentBox").innerHTML = html || '<div class="text-muted text-center py-5">暂无作业，点击上方发布</div>';
+  document.getElementById("assignmentBox").innerHTML = hasData ? html : '<div class="text-muted text-center py-5">暂无作业，点击上方发布</div>';
 }
 
 async function publishAssignment() {
@@ -326,6 +369,60 @@ async function publishAssignment() {
   });
   bootstrap.Modal.getInstance(assignModal).hide();
   loadAssignments();
+  loadPeerReviewManage();
+  loadDashboard();
+}
+
+async function loadPeerReviewManage() {
+  var courses = await api("/teacher/courses");
+  var html = '<div class="section-head"><h5 class="mb-0">互评管理</h5></div>';
+  var hasData = false;
+  for (var ci = 0; ci < courses.length; ci++) {
+    var c = courses[ci];
+    var assignments = await api("/teacher/courses/" + c.id + "/assignments");
+    if (!assignments.length) continue;
+    hasData = true;
+    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name) + '</h6><table class="table table-sm align-middle"><thead><tr><th>作业</th><th>状态</th><th>窗口</th><th>规则</th><th>参与统计</th><th></th></tr></thead><tbody>';
+    for (var ai = 0; ai < assignments.length; ai++) {
+      var a = assignments[ai];
+      var overview = await api('/teacher/assignments/' + a.id + '/peer-review');
+      var status = overview.enabled ? '<span class="badge-soft bg-success bg-opacity-10 text-success">已开启</span>' : '<span class="badge-soft bg-secondary bg-opacity-10 text-secondary">未开启</span>';
+      html += '<tr><td>' + App.escapeHtml(a.title) + '</td><td>' + status + '</td><td>' + (overview.openAt ? App.fmtTime(overview.openAt) : '-') + ' ~ ' + (overview.closeAt ? App.fmtTime(overview.closeAt) : '-') + '</td><td>' + (overview.requiredCount || 1) + ' 次 / 每次 ' + Number(overview.bonusPerReview || 0).toFixed(1) + ' 分 / 上限 ' + Number(overview.bonusCap || 0).toFixed(1) + ' 分</td><td>已提交 ' + (overview.totalReviews || 0) + ' 次，已加分 ' + (overview.grantedCount || 0) + ' 次</td><td><button class="btn btn-outline-primary btn-sm" onclick="openPeerConfig(' + a.id + ', ' + JSON.stringify(App.escapeAttr(a.title || '')).replace(/"/g, '&quot;') + ')"><i class="fa-solid fa-sliders me-1"></i>配置</button></td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+  document.getElementById('peerReviewManageBox').innerHTML = hasData ? html : '<div class="text-muted text-center py-5">请先发布作业，再配置互评</div>';
+}
+
+async function openPeerConfig(assignmentId, title) {
+  var overview = await api('/teacher/assignments/' + assignmentId + '/peer-review');
+  peerConfigAssignmentId.value = assignmentId;
+  peerConfigTitle.textContent = String(title || '').replace(/&quot;/g, '');
+  peerEnabled.checked = !!overview.enabled;
+  peerOpenAt.value = overview.openAt ? String(overview.openAt).slice(0, 16) : '';
+  peerCloseAt.value = overview.closeAt ? String(overview.closeAt).slice(0, 16) : '';
+  peerRequiredCount.value = overview.requiredCount || 1;
+  peerBonusPerReview.value = overview.bonusPerReview != null ? overview.bonusPerReview : 1;
+  peerBonusCap.value = overview.bonusCap != null ? overview.bonusCap : 1;
+  peerPrompt.value = overview.prompt || '';
+  new bootstrap.Modal(peerConfigModal).show();
+}
+
+async function savePeerConfig() {
+  var assignmentId = peerConfigAssignmentId.value;
+  await api('/teacher/assignments/' + assignmentId + '/peer-review', 'POST', {
+    peerReviewEnabled: peerEnabled.checked,
+    peerReviewOpenAt: peerOpenAt.value || null,
+    peerReviewCloseAt: peerCloseAt.value || null,
+    peerReviewRequiredCount: Number(peerRequiredCount.value || 1),
+    peerReviewBonusPerReview: Number(peerBonusPerReview.value || 1),
+    peerReviewBonusCap: Number(peerBonusCap.value || 1),
+    peerReviewPrompt: peerPrompt.value.trim()
+  });
+  bootstrap.Modal.getInstance(peerConfigModal).hide();
+  loadAssignments();
+  loadPeerReviewManage();
+  loadDashboard();
 }
 
 async function loadGrading() {
@@ -342,11 +439,11 @@ async function loadGrading() {
       hasGrading = true;
       html += '<div class="table-wrap mb-3"><h6 class="mb-2"><i class="fa-solid fa-file me-2" style="color:var(--accent-2)"></i>' + App.escapeHtml(c.name) + ' / ' + App.escapeHtml(a.title) + '</h6><table class="table table-sm"><thead><tr><th>学生</th><th>提交内容</th><th>状态</th><th>分数</th><th></th></tr></thead><tbody>';
       subs.forEach(function(s) {
-        var submittedContent = s.content ? App.escapeHtml(s.content) : "-";
+        var submittedContent = s.content ? App.escapeHtml(s.content) : '-';
         if (s.filePaths) submittedContent += '<div class="small text-muted mt-1">附件：' + App.escapeHtml(s.filePaths) + '</div>';
-        html += '<tr><td>' + App.escapeHtml(s.student ? (s.student.displayName || s.student.username) : "-") + '</td><td>' + submittedContent + '</td><td>' + (s.status === "SUBMITTED" ? '<span class="badge-soft bg-warning bg-opacity-10 text-warning">待评分</span>' : s.status === "GRADED" ? '<span class="badge-soft bg-success bg-opacity-10 text-success">已评分</span>' : App.escapeHtml(s.status)) + '</td><td><span class="fw-semibold">' + (s.score != null ? s.score : "-") + '</span></td><td><button class="btn btn-outline-primary btn-sm" onclick="gradeSubmission(' + s.id + ')"><i class="fa-solid fa-pen"></i> 评分</button></td></tr>';
+        html += '<tr><td>' + App.escapeHtml(s.student ? (s.student.displayName || s.student.username) : '-') + '</td><td>' + submittedContent + '</td><td>' + (s.status === 'SUBMITTED' ? '<span class="badge-soft bg-warning bg-opacity-10 text-warning">待评分</span>' : s.status === 'GRADED' ? '<span class="badge-soft bg-success bg-opacity-10 text-success">已评分</span>' : App.escapeHtml(s.status)) + '</td><td><span class="fw-semibold">' + (s.score != null ? s.score : '-') + '</span></td><td><button class="btn btn-outline-primary btn-sm" onclick="gradeSubmission(' + s.id + ')"><i class="fa-solid fa-pen"></i> 评分</button></td></tr>';
       });
-      html += "</tbody></table></div>";
+      html += '</tbody></table></div>';
     }
   }
   document.getElementById("gradingBox").innerHTML = hasGrading ? html : '<div class="text-muted text-center py-5">暂无待评分作业</div>';
@@ -356,9 +453,13 @@ async function gradeSubmission(id) {
   var score = prompt("输入分数（0-100）：");
   if (score === null) return;
   var num = Number(score);
-  if (isNaN(num) || num < 0 || num > 100) { alert("分数必须在0-100之间"); return; }
+  if (isNaN(num) || num < 0 || num > 100) {
+    alert("分数必须在0-100之间");
+    return;
+  }
   await api("/teacher/submissions/" + id + "/grade", "POST", { score: num, comment: "" });
   loadGrading();
+  loadAnalysis();
 }
 
 async function loadAnalysis() {
@@ -372,7 +473,7 @@ async function loadAnalysis() {
       var a = assignments[ai];
       var d = await api("/teacher/assignments/" + a.id + "/analysis");
       if (!d || !d.distribution || !d.distribution.length) continue;
-      var aid = "ana-" + a.id;
+      var aid = 'ana-' + a.id;
       charts.push({ id: aid, data: d });
       html += '<div class="section-surface mb-3 analysis-card"><div class="d-flex justify-content-between align-items-start gap-2 mb-2"><h6 class="mb-0"><i class="fa-solid fa-chart-bar me-2" style="color:var(--accent)"></i>' + App.escapeHtml(a.title) + '</h6><span class="badge-soft bg-primary bg-opacity-10 text-primary">平均分 ' + (d.average != null ? Number(d.average).toFixed(1) : '-') + '</span></div><div class="metric-row mb-2"><span>提交 ' + (d.total || 0) + '</span><span>最高 ' + (d.max != null ? d.max : '-') + '</span><span>及格率 ' + (d.passRate != null ? d.passRate : 0) + '%</span></div><div id="' + aid + '" style="height:260px"></div></div>';
     }

@@ -27,7 +27,7 @@ public class TeacherController {
 
     private final TeacherService teacherService;
     private final UserRepository userRepository;
-    private final ExportService exportService; // 【模块5新增】成绩单导出
+    private final ExportService exportService;
 
     private User getCurrentUser(Authentication auth) {
         return userRepository.findByUsername(auth.getName())
@@ -75,6 +75,23 @@ public class TeacherController {
         return ApiResponse.ok(teacherService.getCourseAssignments(id));
     }
 
+    @PostMapping("/assignments/{id}/peer-review")
+    public ApiResponse<?> configurePeerReview(@PathVariable Long id,
+                                              @RequestBody Map<String, Object> body,
+                                              Authentication auth) {
+        try {
+            return ApiResponse.ok("互评配置已保存",
+                teacherService.configurePeerReview(id, body, getCurrentUser(auth)));
+        } catch (Exception e) {
+            return ApiResponse.error(e.getMessage());
+        }
+    }
+
+    @GetMapping("/assignments/{id}/peer-review")
+    public ApiResponse<?> peerReviewOverview(@PathVariable Long id) {
+        return ApiResponse.ok(teacherService.getPeerReviewOverview(id));
+    }
+
     // ========= 成绩录入 =========
     @GetMapping("/assignments/{id}/submissions")
     public ApiResponse<?> pendingSubmissions(@PathVariable Long id) {
@@ -90,15 +107,13 @@ public class TeacherController {
             teacherService.gradeSubmission(id, score, comment));
     }
 
-    // ========= 成绩分析 =========【模块3新增】
-    /** 某次作业的成绩分布 + 及格率，供教师端直方图展示 */
+    // ========= 成绩分析 =========
     @GetMapping("/assignments/{id}/analysis")
     public ApiResponse<?> assignmentAnalysis(@PathVariable Long id) {
         return ApiResponse.ok(teacherService.getAssignmentAnalysis(id));
     }
 
-    // ========= 数据导出 =========【模块5新增】
-    /** 导出某课程成绩单为 CSV */
+    // ========= 数据导出 =========
     @GetMapping("/courses/{id}/grades/export")
     public ResponseEntity<byte[]> exportCourseGrades(@PathVariable Long id) {
         byte[] data = exportService.exportCourseGradesCsv(id);

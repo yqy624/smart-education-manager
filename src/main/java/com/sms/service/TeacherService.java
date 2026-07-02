@@ -6,6 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +20,7 @@ public class TeacherService {
     private final AssignmentRepository assignmentRepository;
     private final SubmissionRepository submissionRepository;
     private final EnrollmentRepository enrollmentRepository;
+    private final PeerReviewRepository peerReviewRepository;
     private final NotificationService notificationService;
 
     public List<Course> getMyCourses(User teacher) {
@@ -102,12 +105,16 @@ public class TeacherService {
         sub.setScore(score);
         sub.setTeacherComment(comment);
         sub.setStatus(AssignmentStatus.GRADED);
-        sub.setGradedAt(java.time.LocalDateTime.now());
+        sub.setGradedAt(LocalDateTime.now());
 
-        var assignment = sub.getAssignment();
+        Assignment assignment = sub.getAssignment();
         enrollmentRepository.findByStudentAndCourse(sub.getStudent(), assignment.getCourse())
             .ifPresent(e -> {
-                e.setScore(score);
+                e.setBaseScore(score);
+                if (e.getPeerReviewBonus() < 0) {
+                    e.setPeerReviewBonus(0);
+                }
+                e.setScore(score + e.getPeerReviewBonus());
                 enrollmentRepository.save(e);
             });
 
@@ -164,5 +171,81 @@ public class TeacherService {
         result.put("max", max);
         result.put("min", min);
         return result;
+    }
+
+    @Transactional
+    public Assignment configurePeerReview(Long assignmentId, Map<String, Object> body, User teacher) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+            .orElseThrow(() -> new RuntimeException("作业不存在"));
+        if (teacher.getRole() != RoleType.ADMIN && !assignment.getTeacher().getId().equals(teacher.getId())) {
+            throw new RuntimeException("无权修改该作业");
+        }
+        assignment.setPeerReviewEnabled(Boolean.TRUE.equals(body.get("peerReviewEnabled")));
+        assignment.setPeerReviewOpenAt(parseDateTime(body.get("peerReviewOpenAt")));
+        assignment.setPeerReviewCloseAt(parseDateTime(body.get("peerReviewCloseAt")));
+        assignment.setPeerReviewRequiredCount(toInt(body.get("peerReviewRequiredCount"), 1));
+        assignment.setPeerReviewBonusPerReview(toDouble(body.get("peerReviewBonusPerReview"), 1.0));
+        assignment.setPeerReviewBonusCap(toDouble(body.get("peerReviewBonusCap"), 1.0));
+        assignment.setPeerReviewPrompt((String) body.getOrDefault("peerReviewPrompt", ""));
+        return assignmentRepository.save(assignment);
+    }
+
+    public Map<String, Object> getPeerReviewOverview(Long assignmentId) {
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+            .orElseThrow(() -> new RuntimeException("作业不存在"));
+        List<PeerReview> reviews = peerReviewRepository.findByAssignment(assignment);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (PeerReview review : reviews) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", review.getId());
+            item.put("reviewer", review.getReviewer().getDisplayName() != null ? review.getReviewer().getDisplayName() : review.getReviewer().getUsername());
+            item.put("status", review.getStatus());
+            item.put("rating", review.getRating());
+            item.put("submittedAt", review.getSubmittedAt());
+            item.put("bonusGrantedAt", review.getBonusGrantedAt());
+            items.add(item);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("assignmentId", assignmentId);
+        result.put("enabled", assignment.isPeerReviewEnabled());
+        result.put("openAt", assignment.getPeerReviewOpenAt());
+        result.put("closeAt", assignment.getPeerReviewCloseAt());
+        result.put("requiredCount", assignment.getPeerReviewRequiredCount());
+        result.put("bonusPerReview", assignment.getPeerReviewBonusPerReview());
+        result.put("bonusCap", assignment.getPeerReviewBonusCap());
+        result.put("prompt", assignment.getPeerReviewPrompt());
+        result.put("totalReviews", reviews.size());
+        result.put("grantedCount", reviews.stream().filter(r -> r.getStatus() == PeerReviewStatus.BONUS_GRANTED).count());
+        result.put("reviews", items);
+        return result;
+    }
+
+    private LocalDateTime parseDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        if (text.length() == 16) {
+            text = text + ":00";
+        }
+        return LocalDateTime.parse(text.replace(' ', 'T'));
+    }
+
+    private int toInt(Object value, int defaultValue) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return defaultValue;
+        }
+        return Integer.parseInt(String.valueOf(value));
+    }
+
+    private double toDouble(Object value, double defaultValue) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return defaultValue;
+        }
+        return Double.parseDouble(String.valueOf(value));
     }
 }

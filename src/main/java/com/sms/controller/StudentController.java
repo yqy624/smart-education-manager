@@ -63,8 +63,6 @@ public class StudentController {
                                   @RequestBody Map<String, String> body,
                                   Authentication auth) {
         String content = body.get("content");
-        // 【模块4新增】body 可携带 filePath / fileName（来自 /api/files/upload 的返回），
-        // 若有则以 "path::原名" 形式存入 Submission.filePaths，便于下载时还原文件名
         String filePath = body.get("filePath");
         String fileName = body.get("fileName");
         String stored = null;
@@ -73,6 +71,27 @@ public class StudentController {
         }
         return ApiResponse.ok("提交成功",
             studentService.submitAssignment(id, getCurrentUser(auth), content, stored));
+    }
+
+    // ========= 互评 =========
+    @GetMapping("/peer-reviews")
+    public ApiResponse<?> peerReviews(Authentication auth) {
+        return ApiResponse.ok(studentService.getMyPeerReviews(getCurrentUser(auth)));
+    }
+
+    @PostMapping("/peer-reviews/{assignmentId}/{targetSubmissionId}")
+    public ApiResponse<?> submitPeerReview(@PathVariable Long assignmentId,
+                                           @PathVariable Long targetSubmissionId,
+                                           @RequestBody Map<String, Object> body,
+                                           Authentication auth) {
+        Integer rating = body.get("rating") == null ? null : Integer.parseInt(String.valueOf(body.get("rating")));
+        String comment = String.valueOf(body.getOrDefault("comment", ""));
+        try {
+            return ApiResponse.ok("互评提交成功",
+                studentService.submitPeerReview(getCurrentUser(auth), assignmentId, targetSubmissionId, rating, comment));
+        } catch (Exception e) {
+            return ApiResponse.error(e.getMessage());
+        }
     }
 
     // ========= 成绩 =========

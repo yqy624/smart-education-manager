@@ -42,4 +42,23 @@ public class Assignment {
 
     @Builder.Default
     private Integer totalPoints = 100;
+
+    @Builder.Default
+    private boolean peerReviewEnabled = false;
+
+    private LocalDateTime peerReviewOpenAt;
+
+    private LocalDateTime peerReviewCloseAt;
+
+    @Builder.Default
+    private Integer peerReviewRequiredCount = 1;
+
+    @Builder.Default
+    private Double peerReviewBonusPerReview = 1.0;
+
+    @Builder.Default
+    private Double peerReviewBonusCap = 1.0;
+
+    @Column(columnDefinition = "TEXT")
+    private String peerReviewPrompt;
 }

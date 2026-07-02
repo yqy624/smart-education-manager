@@ -16,12 +16,13 @@
       <div class="brand-mark"><i class="fa-solid fa-user-graduate"></i></div>
       <div>
         <div class="fw-bold">学生工作台</div>
-        <div class="small text-white-50">选课、作业、成绩</div>
+        <div class="small text-white-50">选课、作业、互评、成绩</div>
       </div>
     </div>
     <div class="nav-item active" data-tab="dashboard"><i class="fa-solid fa-chart-line"></i> 概览</div>
     <div class="nav-item" data-tab="courses"><i class="fa-solid fa-book"></i> 课程</div>
     <div class="nav-item" data-tab="assignments"><i class="fa-solid fa-file-circle-check"></i> 作业</div>
+    <div class="nav-item" data-tab="peer-reviews"><i class="fa-solid fa-comments"></i> 互评</div>
     <div class="nav-item" data-tab="grades"><i class="fa-solid fa-chart-column"></i> 成绩</div>
   </aside>
   <main class="main-area">
@@ -50,7 +51,7 @@
       <div class="hero-banner mb-3">
         <div class="eyebrow"><i class="fa-solid fa-user-graduate"></i> 学习概览</div>
         <div class="title">欢迎回来，<span id="heroName">同学</span></div>
-        <div class="desc">查看课程进度、待提交作业和最新成绩，合理规划学习时间。</div>
+        <div class="desc">查看课程进度、待提交作业、匿名互评和最新成绩，合理规划学习时间。</div>
       </div>
       <div class="kpi-grid mb-3" id="kpiGrid"></div>
       <div class="row g-3">
@@ -64,6 +65,9 @@
     </section>
     <section id="view-assignments" class="view d-none">
       <div class="section-card"><div id="assignmentBox"></div></div>
+    </section>
+    <section id="view-peer-reviews" class="view d-none">
+      <div class="section-card"><div id="peerReviewBox"></div></div>
     </section>
     <section id="view-grades" class="view d-none">
       <div class="section-card"><div id="gradeBox"></div></div>
@@ -107,6 +111,42 @@
   </div>
 </div>
 
+<div class="modal fade" id="peerReviewModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">匿名互评</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="peerAssignmentId">
+        <input type="hidden" id="peerTargetSubmissionId">
+        <div class="mb-2 fw-semibold" id="peerReviewAssignmentTitle"></div>
+        <div class="mb-3 small text-muted" id="peerReviewPrompt"></div>
+        <label class="form-label" for="peerTargetSelect">评价对象</label>
+        <select id="peerTargetSelect" class="form-select mb-2" onchange="changePeerTarget(this.value)"></select>
+        <div class="small text-muted mb-3" id="peerTargetMeta"></div>
+        <div class="p-3 border rounded bg-light-subtle mb-3">
+          <div class="small text-muted mb-1">被评作业内容</div>
+          <div id="peerReviewPreview" style="white-space: pre-wrap;"></div>
+        </div>
+        <div class="p-3 border rounded bg-light-subtle mb-3">
+          <div class="small text-muted mb-1">附件信息</div>
+          <div id="peerReviewFiles" style="white-space: pre-wrap;"></div>
+        </div>
+        <label class="form-label" for="peerRating">评价星级</label>
+        <select id="peerRating" class="form-select mb-3">
+          <option value="5">5 分</option>
+          <option value="4">4 分</option>
+          <option value="3">3 分</option>
+          <option value="2">2 分</option>
+          <option value="1">1 分</option>
+        </select>
+        <label class="form-label" for="peerComment">评价内容</label>
+        <textarea id="peerComment" class="form-control" rows="5" placeholder="请给出不少于 10 个字的合理评价"></textarea>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="submitPeerReview()">提交互评</button></div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
 <script src="/js/app.js?v=20240630"></script>
 <script>
@@ -125,16 +165,18 @@ var assignmentPage = 1;
 var gradePage = 1;
 var pageSize = 5;
 var assignmentSubmissions = {};
+var peerReviewGroups = [];
 tabs.forEach(function(el) { el.addEventListener("click", function() { switchTab(el.dataset.tab); }); });
 function switchTab(tab) {
   tabs.forEach(function(x) { x.classList.toggle("active", x.dataset.tab === tab); });
   document.querySelectorAll(".view").forEach(function(v) { v.classList.add("d-none"); });
   document.getElementById("view-" + tab).classList.remove("d-none");
-  var title = {dashboard:"概览", courses:"课程", assignments:"作业", grades:"成绩"}[tab];
+  var title = {dashboard:"概览", courses:"课程", assignments:"作业", "peer-reviews":"互评", grades:"成绩"}[tab];
   document.getElementById("titleText").textContent = title;
   App.setBreadcrumb(["学生工作台", title]);
   if (tab === "courses") loadCourses();
   if (tab === "assignments") loadAssignments();
+  if (tab === "peer-reviews") loadPeerReviews();
   if (tab === "grades") loadGrades();
 }
 
@@ -204,14 +246,16 @@ function renderPager(total, page, target, action) {
 async function loadDashboard() {
   var myCourses = await api("/student/my-courses");
   var grades = await api("/student/grades");
+  var peerReviews = await api("/student/peer-reviews");
   var scored = grades.filter(function(x) { return x.score != null; });
   var avg = scored.length ? (scored.reduce(function(a, b) { return a + b.score; }, 0) / scored.length) : 0;
   var pending = grades.filter(function(x) { return x.status === "PENDING" || x.status === "SUBMITTED"; }).length;
+  var bonus = peerReviews.reduce(function(total, item) { return Math.max(total, Number(item.bonusEarned || 0)); }, 0);
 
   document.getElementById("kpiGrid").innerHTML = [
     { label: "已选课程", value: myCourses.length, color: "var(--accent)", tab: "courses" },
     { label: "已评分作业", value: scored.length, color: "var(--accent-2)", tab: "grades" },
-    { label: "平均分", value: avg.toFixed(1), color: "var(--accent-3)", tab: "grades" },
+    { label: "互评加分", value: bonus.toFixed(1), color: "var(--accent-3)", tab: "peer-reviews" },
     { label: "待提交", value: pending, color: "var(--accent-4)", tab: "assignments" }
   ].map(function(k) { return '<div class="kpi" role="button" tabindex="0" onclick="switchTab(\'' + k.tab + '\')" onkeydown="handleKpiKey(event, \'' + k.tab + '\')" style="border-left:4px solid ' + k.color + '"><div class="value">' + k.value + '</div><div class="label">' + k.label + '</div></div>'; }).join("");
 
@@ -259,9 +303,14 @@ function goCoursePage(page) {
 }
 
 async function enrollCourse(id) {
-  await api("/student/enroll/" + id, "POST");
-  loadCourses();
-  loadDashboard();
+  try {
+    await api("/student/enroll/" + id, "POST");
+    loadCourses();
+    loadDashboard();
+    App.showToast("选课成功");
+  } catch (err) {
+    App.showToast(err.message || "选课失败", "danger");
+  }
 }
 
 async function loadAssignments() {
@@ -287,11 +336,12 @@ async function loadAssignments() {
     if (currentCourseId !== c.id) {
       if (currentCourseId !== null) html += "</tbody></table></div>";
       currentCourseId = c.id;
-      html += '<div class="section-head mt-3"><h5 class="mb-0"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name) + "</h5></div>" +
-        '<div class="table-wrap"><table class="table table-sm"><thead><tr><th>标题</th><th>截止时间</th><th>满分</th><th>附件</th><th>提交内容</th><th></th></tr></thead><tbody>';
+      html += '<div class="section-head mt-3"><h5 class="mb-0"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name) + '</h5></div>' +
+        '<div class="table-wrap"><table class="table table-sm"><thead><tr><th>标题</th><th>截止时间</th><th>满分</th><th>互评</th><th>提交内容</th><th></th></tr></thead><tbody>';
     }
     var submitted = row.submission && row.submission.content ? App.escapeHtml(row.submission.content) : "-";
-    html += '<tr><td>' + App.escapeHtml(a.title) + '</td><td>' + App.fmtTime(a.dueDate) + '</td><td>' + (a.totalPoints || 100) + '</td><td>' + App.escapeHtml(a.attachmentPaths || "-") + '</td><td>' + submitted + '</td><td><button class="btn btn-outline-primary btn-sm" data-title="' + App.escapeAttr(a.title || "") + '" onclick="openSubmit(' + a.id + ', this.dataset.title)"><i class="fa-solid fa-upload me-1"></i>' + (row.submission ? '重新提交' : '提交') + '</button></td></tr>';
+    var peerBadge = a.peerReviewEnabled ? '<span class="badge-soft bg-info bg-opacity-10 text-info">已开放</span>' : '<span class="badge-soft bg-secondary bg-opacity-10 text-secondary">未开放</span>';
+    html += '<tr><td>' + App.escapeHtml(a.title) + '</td><td>' + App.fmtTime(a.dueDate) + '</td><td>' + (a.totalPoints || 100) + '</td><td>' + peerBadge + '</td><td>' + submitted + '</td><td><button class="btn btn-outline-primary btn-sm" data-title="' + App.escapeAttr(a.title || "") + '" onclick="openSubmit(' + a.id + ', this.dataset.title)"><i class="fa-solid fa-upload me-1"></i>' + (row.submission ? '重新提交' : '提交') + '</button></td></tr>';
     if (index === pageRows.length - 1) html += "</tbody></table>" + renderPager(rows.length, assignmentPage, "assignments", "goAssignmentPage") + "</div>";
   });
   if (!html) html = '<div class="text-muted text-center py-5">暂无作业</div><div class="table-wrap mt-3">' + renderPager(rows.length, assignmentPage, "assignments", "goAssignmentPage") + '</div>';
@@ -332,6 +382,96 @@ async function submitAssignment() {
     fileName: fileName
   });
   bootstrap.Modal.getInstance(submitModal).hide();
+  loadAssignments();
+  loadDashboard();
+}
+
+async function loadPeerReviews() {
+  peerReviewGroups = await api("/student/peer-reviews");
+  var html = '<div class="section-head"><h5 class="mb-0">匿名互评</h5></div>';
+  if (!peerReviewGroups.length) {
+    document.getElementById("peerReviewBox").innerHTML = html + '<div class="text-muted text-center py-5">当前没有可参与的互评任务</div>';
+    return;
+  }
+  peerReviewGroups.forEach(function(group) {
+    html += '<div class="section-surface mb-3"><div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3"><div><h6 class="mb-1">' + App.escapeHtml(group.courseName) + ' / ' + App.escapeHtml(group.assignmentTitle) + '</h6><div class="small text-muted">' + App.escapeHtml(group.prompt || '请根据作业质量给出客观、具体的匿名评价。') + '</div></div><div class="text-end"><div class="small text-muted">已完成 ' + group.completedCount + ' / ' + group.requiredCount + '</div><div class="fw-semibold text-primary">已获加分 ' + Number(group.bonusEarned || 0).toFixed(1) + '</div></div></div>';
+    html += '<div class="table-wrap"><table class="table table-sm align-middle"><thead><tr><th>状态</th><th>评价对象</th><th>作业内容</th><th>评分</th><th>评语</th><th></th></tr></thead><tbody>';
+    group.reviews.forEach(function(item, index) {
+      var statusText = item.status === 'BONUS_GRANTED' ? '已加分' : item.status === 'SUBMITTED' ? '已提交' : '待评价';
+      var statusClass = item.status === 'BONUS_GRANTED' ? 'bg-success bg-opacity-10 text-success' : item.status === 'SUBMITTED' ? 'bg-warning bg-opacity-10 text-warning' : 'bg-secondary bg-opacity-10 text-secondary';
+      var target = item.selectedTarget || (item.candidateTargets && item.candidateTargets.length ? item.candidateTargets[0] : null);
+      var targetName = target ? App.escapeHtml(target.studentName || '同学') : '-';
+      var content = target ? App.escapeHtml(target.content || '-') : App.escapeHtml(item.preview || '-');
+      html += '<tr><td><span class="badge-soft ' + statusClass + '">' + statusText + '</span></td><td>' + targetName + '</td><td style="max-width:360px;white-space:pre-wrap;">' + content + '</td><td>' + (item.rating != null ? item.rating + ' / 5' : '-') + '</td><td style="max-width:320px;white-space:pre-wrap;">' + App.escapeHtml(item.comment || '-') + '</td><td>' + (item.status === 'ASSIGNED' ? '<button class="btn btn-outline-primary btn-sm" onclick="openPeerReviewModal(' + group.assignmentId + ', ' + index + ')"><i class="fa-solid fa-pen-to-square me-1"></i>去互评</button>' : '<span class="small text-muted">' + (item.submittedAt ? App.fmtTime(item.submittedAt) : '') + '</span>') + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+  });
+  document.getElementById("peerReviewBox").innerHTML = html;
+}
+
+function openPeerReviewModal(assignmentId, reviewIndex) {
+  var group = peerReviewGroups.find(function(x) { return x.assignmentId === assignmentId; });
+  if (!group) return;
+  var item = (group.reviews || [])[reviewIndex];
+  if (!item) return;
+  peerAssignmentId.value = assignmentId;
+  peerReviewAssignmentTitle.textContent = group.courseName + ' / ' + group.assignmentTitle;
+  peerReviewPrompt.textContent = group.prompt || '请结合内容质量、完整性和表达清晰度给出客观评价。';
+
+  var candidates = item.candidateTargets || [];
+  peerTargetSelect.innerHTML = candidates.map(function(target) {
+    return '<option value="' + target.submissionId + '">' + App.escapeHtml(target.studentName || '同学') + '</option>';
+  }).join('');
+
+  var selectedTarget = item.selectedTarget || (candidates.length ? candidates[0] : null);
+  if (selectedTarget) {
+    peerTargetSelect.value = String(selectedTarget.submissionId);
+    applyPeerTarget(selectedTarget);
+  } else {
+    peerTargetSubmissionId.value = '';
+    peerTargetMeta.textContent = '';
+    peerReviewPreview.textContent = '';
+    peerReviewFiles.textContent = '';
+  }
+
+  peerRating.value = item.rating != null ? String(item.rating) : '5';
+  peerComment.value = item.comment || '';
+  new bootstrap.Modal(peerReviewModal).show();
+}
+
+function changePeerTarget(targetSubmissionId) {
+  var assignmentId = Number(peerAssignmentId.value || 0);
+  var group = peerReviewGroups.find(function(x) { return x.assignmentId === assignmentId; });
+  if (!group) return;
+  var candidates = [];
+  (group.reviews || []).forEach(function(item) {
+    if (item.candidateTargets && item.candidateTargets.length) {
+      candidates = item.candidateTargets;
+    }
+  });
+  var selected = candidates.find(function(target) { return String(target.submissionId) === String(targetSubmissionId); });
+  if (selected) {
+    applyPeerTarget(selected);
+  }
+}
+
+function applyPeerTarget(target) {
+  peerTargetSubmissionId.value = target.submissionId;
+  peerTargetMeta.textContent = '评价对象：' + (target.studentName || '同学') + (target.submittedAt ? ' · 提交时间 ' + App.fmtTime(target.submittedAt) : '');
+  peerReviewPreview.textContent = target.content || '';
+  peerReviewFiles.textContent = target.filePaths ? target.filePaths : '无附件';
+}
+
+async function submitPeerReview() {
+  var assignmentId = peerAssignmentId.value;
+  var targetSubmissionId = peerTargetSubmissionId.value;
+  await api('/student/peer-reviews/' + assignmentId + '/' + targetSubmissionId, 'POST', {
+    rating: Number(peerRating.value),
+    comment: peerComment.value.trim()
+  });
+  bootstrap.Modal.getInstance(peerReviewModal).hide();
+  loadPeerReviews();
+  loadGrades();
   loadDashboard();
 }
 
@@ -341,10 +481,10 @@ async function loadGrades() {
   if (gradePage > pages) gradePage = pages;
   var start = (gradePage - 1) * pageSize;
   var pageGrades = grades.slice(start, start + pageSize);
-  document.getElementById("gradeBox").innerHTML = '<div class="section-head"><h5 class="mb-0">成绩列表</h5></div><div class="table-wrap"><table class="table table-hover align-middle"><thead><tr><th>课程</th><th>作业</th><th>状态</th><th>提交内容</th><th>分数</th><th>评语</th></tr></thead><tbody>' +
+  document.getElementById("gradeBox").innerHTML = '<div class="section-head"><h5 class="mb-0">成绩列表</h5></div><div class="table-wrap"><table class="table table-hover align-middle"><thead><tr><th>课程</th><th>作业</th><th>状态</th><th>提交内容</th><th>教师分</th><th>互评加分</th><th>总分</th><th>评语</th></tr></thead><tbody>' +
     pageGrades.map(function(g) {
       var statusBadge = g.status === "GRADED" ? "bg-success bg-opacity-10 text-success" : g.status === "SUBMITTED" ? "bg-warning bg-opacity-10 text-warning" : "bg-secondary bg-opacity-10 text-secondary";
-      return "<tr><td>" + App.escapeHtml(g.courseName || "-") + "</td><td>" + App.escapeHtml(g.assignmentTitle || "-") + '</td><td><span class="badge-soft ' + statusBadge + '">' + App.escapeHtml(g.status || "未提交") + '</span></td><td>' + App.escapeHtml(g.content || "-") + '</td><td><span class="fw-bold">' + (g.score != null ? g.score : "-") + "</span></td><td>" + App.escapeHtml(g.teacherComment || "-") + "</td></tr>";
+      return '<tr><td>' + App.escapeHtml(g.courseName || '-') + '</td><td>' + App.escapeHtml(g.assignmentTitle || '-') + '</td><td><span class="badge-soft ' + statusBadge + '">' + App.escapeHtml(g.status || '未提交') + '</span></td><td>' + App.escapeHtml(g.content || '-') + '</td><td>' + (g.teacherScore != null ? g.teacherScore : '-') + '</td><td>' + Number(g.peerReviewBonus || 0).toFixed(1) + '</td><td><span class="fw-bold">' + (g.score != null ? g.score : '-') + '</span></td><td>' + App.escapeHtml(g.teacherComment || '-') + '</td></tr>';
     }).join("") + "</tbody></table>" + renderPager(grades.length, gradePage, "grades", "goGradePage") + "</div>";
 }
 

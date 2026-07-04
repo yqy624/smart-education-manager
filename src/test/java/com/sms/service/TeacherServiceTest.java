@@ -3,7 +3,6 @@ package com.sms.service;
 import com.sms.model.*;
 import com.sms.repository.*;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.util.List;
 import java.util.Optional;
@@ -19,9 +18,19 @@ class TeacherServiceTest {
         AssignmentRepository assignmentRepository = mock(AssignmentRepository.class);
         SubmissionRepository submissionRepository = mock(SubmissionRepository.class);
         EnrollmentRepository enrollmentRepository = mock(EnrollmentRepository.class);
+        PeerReviewRepository peerReviewRepository = mock(PeerReviewRepository.class);
         NotificationService notificationService = mock(NotificationService.class);
+        TeacherCommentMemoryService teacherCommentMemoryService = mock(TeacherCommentMemoryService.class);
 
-        TeacherService service = new TeacherService(courseRepository, assignmentRepository, submissionRepository, enrollmentRepository, notificationService);
+        TeacherService service = new TeacherService(
+            courseRepository,
+            assignmentRepository,
+            submissionRepository,
+            enrollmentRepository,
+            peerReviewRepository,
+            notificationService,
+            teacherCommentMemoryService
+        );
         Assignment assignment = Assignment.builder().id(1L).title("Quiz").build();
         when(assignmentRepository.findById(1L)).thenReturn(Optional.of(assignment));
         when(submissionRepository.findByAssignment(assignment)).thenReturn(List.of(

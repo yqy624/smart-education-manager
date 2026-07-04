@@ -33,7 +33,9 @@ public class SecurityConfig {
                 .requestMatchers("/", "/login", "/login.html",
                                  "/admin/**", "/teacher/**", "/student/**",
                                  "/css/**", "/js/**",
-                                 "/error").permitAll()
+                                 "/error",
+                                 "/swagger-ui.html", "/swagger-ui/**",
+                                 "/v3/api-docs", "/v3/api-docs/**").permitAll()
                 // 【模块1新增】WebSocket 握手端点放行，鉴权由 AuthHandshakeInterceptor 在握手阶段完成
                 .requestMatchers("/ws/**").permitAll()
                 .requestMatchers("/api/auth/**", "/api/public/**").permitAll()

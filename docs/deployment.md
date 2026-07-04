@@ -4,7 +4,7 @@
 Build with the bundled Dockerfile; it uses an official Maven builder image and a Java 17 runtime image.
 
 ## Nginx
-Proxy `/api`, `/admin`, `/student`, `/teacher`, `/css`, `/js` to the backend service.
+Proxy `/api`, `/admin`, `/student`, `/teacher`, `/css`, `/js`, `/swagger-ui`, `/v3/api-docs` to the backend service.
 
 ## Environment
 - `DB_URL`

@@ -2,6 +2,12 @@ package com.sms.controller;
 
 import com.sms.dto.ApiResponse;
 import com.sms.service.FileStorageService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -15,28 +21,20 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
-/**
- * 文件上传/下载接口。
- * 【新增文件 - 模块4：作业附件上传/下载】
- *
- * 上传：POST /api/files/upload (multipart)  -> 返回 {path, originalName}
- *   前端拿到 path 后，连同作业内容一起调用 /api/student/assignments/{id}/submit-with-file
- *   （或把 path 存到表单再提交）。这里上传与业务解耦，便于复用。
- * 下载：GET /api/files/download?path=...&name=...  -> 以原文件名返回附件流
- *
- * 权限：所有登录用户可上传/下载（学生交附件、师生下载附件）。
- */
 @RestController
 @RequestMapping("/api/files")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('ADMIN', 'TEACHER', 'STUDENT')")
+@Tag(name = "Files", description = "附件上传与下载接口")
+@SecurityRequirement(name = "bearerAuth")
 public class FileController {
 
     private final FileStorageService fileStorageService;
 
-    /** 上传附件，返回存储路径与原始文件名 */
+    @Operation(summary = "上传附件", description = "上传作业相关附件，返回存储路径、原始文件名与文件大小。")
     @PostMapping("/upload")
-    public ApiResponse<?> upload(@RequestParam("file") MultipartFile file) {
+    public ApiResponse<?> upload(@Parameter(description = "上传文件", required = true)
+                                 @RequestParam("file") MultipartFile file) {
         try {
             String path = fileStorageService.store(file, "submissions");
             return ApiResponse.ok("上传成功", Map.of(
@@ -49,14 +47,19 @@ public class FileController {
         }
     }
 
-    /** 下载附件。path 为存库的相对路径，name 为展示给用户的原始文件名（可选） */
+    @Operation(summary = "下载附件", description = "按存储路径下载附件，可选传原始文件名用于下载展示。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponses(value = {
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "下载成功",
+            content = @Content(mediaType = "application/octet-stream"))
+    })
     @GetMapping("/download")
-    public ResponseEntity<Resource> download(@RequestParam String path,
-                                             @RequestParam(required = false) String name) {
+    public ResponseEntity<Resource> download(@Parameter(description = "文件存储路径") @RequestParam String path,
+                                             @Parameter(description = "下载展示文件名，可选") @RequestParam(required = false) String name) {
         Resource resource = fileStorageService.loadAsResource(path);
         String downloadName = (name == null || name.isBlank())
             ? resource.getFilename() : name;
-        // 用 RFC 5987 编码，兼容中文文件名
         String encoded = URLEncoder.encode(downloadName, StandardCharsets.UTF_8).replace("+", "%20");
         return ResponseEntity.ok()
             .contentType(MediaType.APPLICATION_OCTET_STREAM)

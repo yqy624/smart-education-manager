@@ -32,6 +32,10 @@
 
 默认访问地址：`http://localhost:8080`
 
+在线接口文档地址：
+- Swagger UI：`http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON：`http://localhost:8080/v3/api-docs`
+
 ## 本地运行
 
 1. 配置数据库连接和 JWT 密钥。

@@ -76,8 +76,9 @@ docker compose down -v
 说明：
 
 - 首次启动时会先初始化 MySQL，应用会在数据库健康检查通过后再启动。
+- Docker Compose 会同时启动 MySQL 和 Redis，应用通过容器网络连接它们。
 - `docker compose down -v` 会同时清空本地数据库卷数据。
-- Compose 默认只暴露应用的 `8080` 端口，MySQL 仅在容器网络内供应用访问。
+- Compose 默认只暴露应用的 `8080` 端口，MySQL 和 Redis 仅在容器网络内供应用访问。
 
 ## 关键配置
 
@@ -89,6 +90,12 @@ spring:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:student_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:change-me}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
 
 jwt:
   secret: ${JWT_SECRET:ChangeThisJwtSecretBeforeProductionUse_AtLeast32CharsLong}

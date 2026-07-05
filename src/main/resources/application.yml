@@ -37,6 +37,21 @@ spring:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
 
+  cache:
+    type: redis
+    redis:
+      cache-null-values: false
+      use-key-prefix: true
+      key-prefix: "sms::"
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      timeout: 3s
+
 jwt:
   secret: ${JWT_SECRET:0123456789abcdef0123456789abcdef}
   expiration: 86400000

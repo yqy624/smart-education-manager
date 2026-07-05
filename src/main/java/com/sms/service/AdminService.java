@@ -13,6 +13,8 @@ import com.sms.repository.CourseRepository;
 import com.sms.repository.EnrollmentRepository;
 import com.sms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -64,6 +66,7 @@ public class AdminService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "adminDashboardStats", allEntries = true)
     public void deleteUser(Long userId) {
         userRepository.deleteById(userId);
     }
@@ -79,6 +82,7 @@ public class AdminService {
         return userRepository.countByRole(role);
     }
 
+    @Cacheable(cacheNames = "adminDashboardStats", key = "'summary'")
     public Map<String, Object> getDashboardStats() {
         Map<String, Object> stats = new LinkedHashMap<>();
         LocalDateTime now = LocalDateTime.now();
@@ -182,6 +186,7 @@ public class AdminService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public Course updateCourse(Long courseId, AdminCourseUpdateRequest request, AdminAuditActor actor) {
         Course course = getCourse(courseId);
         User teacher = userRepository.findById(request.getTeacherId()).orElseThrow(() -> new RuntimeException("授课教师不存在"));
@@ -200,6 +205,7 @@ public class AdminService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "adminDashboardStats", allEntries = true)
     public Map<String, Object> adjustCourseEnrollments(Long courseId, AdminCourseEnrollmentAdjustRequest request, AdminAuditActor actor) {
         Course course = getCourse(courseId);
         if (request.getMaxStudents() != null) {
@@ -272,6 +278,7 @@ public class AdminService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public Course toggleCourseVisibility(Long courseId, AdminAuditActor actor) {
         Course course = getCourse(courseId);
         course.setVisible(!course.isVisible());
@@ -281,6 +288,7 @@ public class AdminService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public void deleteCourse(Long courseId, AdminAuditActor actor) {
         Course course = getCourse(courseId);
         enrollmentRepository.deleteByCourse(course);
@@ -289,6 +297,7 @@ public class AdminService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public void batchHideCourses(List<Long> courseIds, AdminAuditActor actor) {
         List<Course> courses = courseRepository.findAllById(courseIds);
         courses.forEach(course -> course.setVisible(false));
@@ -297,6 +306,7 @@ public class AdminService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public void batchDeleteCourses(List<Long> courseIds, AdminAuditActor actor) {
         List<Course> courses = courseRepository.findAllById(courseIds);
         for (Course course : courses) {

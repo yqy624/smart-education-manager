@@ -5,6 +5,7 @@ import com.sms.model.*;
 import com.sms.repository.*;
 import com.sms.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,6 +21,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
 
+    @CacheEvict(cacheNames = "adminDashboardStats", allEntries = true)
     public LoginResponse login(LoginRequest req) {
         authenticationManager.authenticate(
             new UsernamePasswordAuthenticationToken(req.getUsername(), req.getPassword()));
@@ -48,6 +50,7 @@ public class AuthService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "adminDashboardStats", allEntries = true)
     public User register(UserCreateRequest req) {
         if (userRepository.existsByUsername(req.getUsername())) {
             throw new RuntimeException("用户名已存在");

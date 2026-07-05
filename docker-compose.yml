@@ -16,6 +16,10 @@ services:
       retries: 12
       start_period: 30s
 
+  redis:
+    image: redis:7-alpine
+    container_name: smart-education-redis
+
   app:
     build:
       context: .
@@ -23,12 +27,16 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_started
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: student_db
       DB_USERNAME: sms
       DB_PASSWORD: a666666.
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       JWT_SECRET: ChangeThisJwtSecretBeforeProductionUse_AtLeast32CharsLong
     ports:
       - "8080:8080"

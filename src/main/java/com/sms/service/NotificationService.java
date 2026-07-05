@@ -6,6 +6,9 @@ import com.sms.repository.NotificationRepository;
 import com.sms.websocket.NotificationWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,9 +25,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class NotificationService {
 
+    private static final String UNREAD_COUNT_CACHE = "notificationUnreadCount";
+
     private final NotificationRepository notificationRepository;
     private final NotificationWebSocketHandler wsHandler;
     private final ObjectMapper objectMapper;
+    private final CacheManager cacheManager;
 
     /**
      * 发送一条通知给指定用户。
@@ -39,6 +45,7 @@ public class NotificationService {
                 .read(false)
                 .build();
         n = notificationRepository.save(n);
+        evictUnreadCount(recipient);
 
         // 实时推送（用户不在线时静默跳过，消息已落库）
         try {
@@ -54,6 +61,7 @@ public class NotificationService {
     public void notifyAll(List<String> recipients, String type, String title, String content, String link) {
         for (String r : recipients) {
             notify(r, type, title, content, link);
+            evictUnreadCount(r);
         }
     }
 
@@ -61,6 +69,7 @@ public class NotificationService {
         return notificationRepository.findByRecipientOrderByCreatedAtDesc(username);
     }
 
+    @Cacheable(cacheNames = UNREAD_COUNT_CACHE, key = "#username")
     public long getUnreadCount(String username) {
         return notificationRepository.countByRecipientAndReadFalse(username);
     }
@@ -70,6 +79,7 @@ public class NotificationService {
         notificationRepository.findById(id)
             .filter(n -> n.getRecipient().equals(username)) // 只能标记自己的通知
             .ifPresent(n -> { n.setRead(true); notificationRepository.save(n); });
+        evictUnreadCount(username);
     }
 
     @Transactional
@@ -78,5 +88,13 @@ public class NotificationService {
             .findByRecipientAndReadFalseOrderByCreatedAtDesc(username);
         unread.forEach(n -> n.setRead(true));
         notificationRepository.saveAll(unread);
+        evictUnreadCount(username);
+    }
+
+    private void evictUnreadCount(String username) {
+        Cache cache = cacheManager.getCache(UNREAD_COUNT_CACHE);
+        if (cache != null) {
+            cache.evict(username);
+        }
     }
 }

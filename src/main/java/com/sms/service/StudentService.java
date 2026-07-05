@@ -3,6 +3,8 @@ package com.sms.service;
 import com.sms.model.*;
 import com.sms.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +29,7 @@ public class StudentService {
     private final PeerReviewRepository peerReviewRepository;
     private final NotificationService notificationService;
 
+    @Cacheable(cacheNames = "visibleCourses", key = "'all'")
     public List<Course> getAllCourses() {
         return courseRepository.findByVisibleTrue();
     }
@@ -36,6 +39,7 @@ public class StudentService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public void enroll(Long courseId, User student) {
         Course course = courseRepository.findById(courseId).orElseThrow(() -> new RuntimeException("课程不存在"));
         if (!course.isVisible()) {
@@ -58,6 +62,7 @@ public class StudentService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public void drop(Long courseId, User student) {
         Course course = courseRepository.findById(courseId).orElseThrow(() -> new RuntimeException("课程不存在"));
         enrollmentRepository.findByStudentAndCourse(student, course).ifPresent(e -> {

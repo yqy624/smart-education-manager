@@ -4,6 +4,7 @@ import com.sms.dto.GradeSubmissionRequest;
 import com.sms.model.*;
 import com.sms.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,12 +31,14 @@ public class TeacherService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public Course createCourse(Course course, User teacher) {
         course.setTeacher(teacher);
         return courseRepository.save(course);
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public Course updateCourse(Long courseId, Course input, User teacher) {
         Course course = courseRepository.findById(courseId)
             .orElseThrow(() -> new RuntimeException("课程不存在"));
@@ -52,6 +55,7 @@ public class TeacherService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = {"visibleCourses", "adminDashboardStats"}, allEntries = true)
     public void deleteCourse(Long courseId) {
         courseRepository.deleteById(courseId);
     }

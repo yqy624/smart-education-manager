@@ -12,4 +12,8 @@ Proxy `/api`, `/admin`, `/student`, `/teacher`, `/css`, `/js`, `/swagger-ui`, `/
 - `DB_NAME`
 - `DB_USERNAME`
 - `DB_PASSWORD`
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `REDIS_PASSWORD`
+- `REDIS_DATABASE`
 - `JWT_SECRET`

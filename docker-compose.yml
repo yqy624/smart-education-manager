@@ -1,0 +1,38 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: smart-education-mysql
+    environment:
+      MYSQL_DATABASE: student_db
+      MYSQL_USER: sms
+      MYSQL_PASSWORD: a666666.
+      MYSQL_ROOT_PASSWORD: a666666.
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pa666666."]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+    container_name: smart-education-app
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: student_db
+      DB_USERNAME: sms
+      DB_PASSWORD: a666666.
+      JWT_SECRET: ChangeThisJwtSecretBeforeProductionUse_AtLeast32CharsLong
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  mysql-data:

@@ -52,6 +52,33 @@ mvn clean package
 java -jar target/education-manager-1.0.0.jar
 ```
 
+## Docker Compose 一键启动
+
+前置条件：已安装 Docker Desktop，且可使用 Docker Compose v2。
+
+```bash
+docker compose up --build
+```
+
+启动完成后访问：
+
+- 应用主页：`http://localhost:8080`
+- Swagger UI：`http://localhost:8080/swagger-ui/index.html`
+- OpenAPI JSON：`http://localhost:8080/v3/api-docs`
+
+常用命令：
+
+```bash
+docker compose down
+docker compose down -v
+```
+
+说明：
+
+- 首次启动时会先初始化 MySQL，应用会在数据库健康检查通过后再启动。
+- `docker compose down -v` 会同时清空本地数据库卷数据。
+- Compose 默认只暴露应用的 `8080` 端口，MySQL 仅在容器网络内供应用访问。
+
 ## 关键配置
 
 公开源码仓库中只应保留占位值，不要提交真实数据库密码、JWT 密钥和生产环境配置。
@@ -59,7 +86,7 @@ java -jar target/education-manager-1.0.0.jar
 ```yml
 spring:
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/student_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8}
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:student_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=UTF-8
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:change-me}
 

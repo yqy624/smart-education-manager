@@ -58,10 +58,19 @@ jwt:
 
 # 【模块4新增】文件上传存储配置
 file:
-  # 附件存储根目录（相对项目运行目录，首次上传自动创建）
-  upload-dir: ./uploads
+  # 历史本地附件目录，仅用于迁移期回退读取
+  legacy-upload-dir: ./uploads
   # 允许的文件后缀白名单（小写，不含点）
   allowed-extensions: pdf,doc,docx,xls,xlsx,ppt,pptx,txt,zip,rar,7z,jpg,jpeg,png,gif
+
+storage:
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:minioadmin}
+    secret-key: ${MINIO_SECRET_KEY:minioadmin}
+    bucket: ${MINIO_BUCKET:education-files}
+    secure: ${MINIO_SECURE:false}
+    auto-create-bucket: ${MINIO_AUTO_CREATE_BUCKET:true}
 
 logging:
   level:

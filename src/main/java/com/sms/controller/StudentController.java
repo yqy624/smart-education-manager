@@ -33,6 +33,12 @@ public class StudentController {
             .orElseThrow(() -> new RuntimeException("用户不存在"));
     }
 
+    @Operation(summary = "查看学生首页数据", description = "返回学生首页的 KPI、成绩趋势、最近成绩和近期活动。")
+    @GetMapping("/dashboard")
+    public ApiResponse<?> dashboard(@Parameter(hidden = true) Authentication auth) {
+        return ApiResponse.ok(studentService.getDashboard(getCurrentUser(auth)));
+    }
+
     @Operation(summary = "查看全部可选课程", description = "返回当前可见、可供学生选修的课程列表。")
     @GetMapping("/courses")
     public ApiResponse<?> allCourses() {

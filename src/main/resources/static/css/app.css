@@ -605,9 +605,9 @@ body[data-role="student"] .role-identity-marker {
 
 .section-card {
   padding: 18px;
-  margin-bottom: 16px;
   position: relative;
   overflow: hidden;
+  height: 100%;
 }
 
 .section-card::before,
@@ -629,6 +629,107 @@ body[data-role="student"] .role-identity-marker {
   align-items:center;
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.empty-panel {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.empty-panel.compact {
+  min-height: 160px;
+}
+
+.empty-panel-copy {
+  max-width: 420px;
+}
+
+.empty-panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+.empty-panel-desc {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dashboard-card-fill {
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-card-fill > .section-head {
+  flex: 0 0 auto;
+}
+
+.dashboard-card-fill > .card-body-fill {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.activity-page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+}
+
+.activity-item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  border: 1px solid var(--border);
+}
+
+.activity-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.activity-content {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin-top: 6px;
+}
+
+.activity-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.activity-pager {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.activity-pager .btn {
+  min-width: 36px;
+}
+
+.chart-surface {
+  min-height: 320px;
+  display: flex;
+  align-items: stretch;
 }
 
 .toolbar {
@@ -732,13 +833,13 @@ body[data-role="student"] .role-identity-marker {
 
 .monitor-panel-grid .section-card {
   margin-bottom: 0;
-  min-height: 360px;
+  min-height: 0;
 }
 
 .monitor-stack {
   display: grid;
   gap: 16px;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: auto auto;
 }
 
 .monitor-stack .section-card {
@@ -801,6 +902,26 @@ body[data-role="student"] .role-identity-marker {
 }
 .notif-item { cursor:pointer; }
 .notif-empty { padding: 20px; text-align:center; color: var(--muted); }
+.nt,
+.ntt {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.nc,
+.ntb {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.ntime {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
 .notif-toast {
   position: fixed;
   top: 18px;

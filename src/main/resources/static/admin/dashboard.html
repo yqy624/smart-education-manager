@@ -7,7 +7,7 @@
   <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js?v=20240630"></script>
-  <link href="/css/app.css?v=20260702" rel="stylesheet">
+  <link href="/css/app.css?v=20260705" rel="stylesheet">
   <style>
     .quick-action-grid,.monitor-metric-grid,.todo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
     .quick-action-btn{display:flex;align-items:center;gap:10px;justify-content:center;padding:14px 16px;border-radius:14px;border:1px solid var(--border);background:var(--bg-card);box-shadow:var(--shadow);color:var(--text-main);font-weight:600}
@@ -79,7 +79,7 @@
         <div class="section-card dashboard-card-main"><div class="section-head"><h5 class="mb-0">近 7 天访问量</h5></div><div id="chartVisits" style="height:320px"></div></div>
         <div class="section-card dashboard-card-side"><div class="section-head"><h5 class="mb-0">用户角色分布</h5></div><div id="chartRoles" style="height:320px"></div></div>
         <div class="section-card dashboard-card-side"><div class="section-head"><h5 class="mb-0">热门课程 Top5</h5></div><div id="topCoursesRank" class="rank-list"></div></div>
-        <div class="section-card dashboard-card-main"><div class="section-head"><h5 class="mb-0">运营趋势</h5></div><div id="chartUsers" style="height:320px"></div></div>
+        <div class="section-card dashboard-card-main"><div class="section-head"><h5 class="mb-0">活动面板</h5><button class="btn btn-primary btn-sm" onclick="openActivityModal()">发布活动</button></div><div id="activityPanel"></div></div>
         <div class="section-card dashboard-card-side"><div class="section-head"><h5 class="mb-0">待办提醒</h5></div><div class="todo-grid" id="todoGrid"></div></div>
       </div>
       <div class="overview-grid mt-3" id="overviewExtra"></div>
@@ -215,8 +215,24 @@
   </div>
 </div>
 
+<div class="modal fade" id="activityModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="activityModalTitle">发布活动</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body row g-3">
+        <input type="hidden" id="activityId">
+        <div class="col-md-8"><label class="form-label">活动标题</label><input id="activityTitle" class="form-control" placeholder="请输入活动标题"></div>
+        <div class="col-md-4"><label class="form-label">受众</label><select id="activityAudience" class="form-select"><option value="ALL">全部师生</option><option value="TEACHERS">仅教师</option><option value="STUDENTS">仅学生</option></select></div>
+        <div class="col-12"><label class="form-label">活动内容</label><textarea id="activityContent" class="form-control" rows="5" placeholder="请输入要展示在教师端和学生端首页的活动内容"></textarea></div>
+        <div class="col-12"><label class="form-label">跳转链接（可选）</label><input id="activityLink" class="form-control" placeholder="例如 /student/dashboard.html"></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button class="btn btn-primary" onclick="saveActivity()">保存</button></div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
-<script src="/js/app.js?v=20240630"></script>
+<script src="/js/app.js?v=20260705"></script>
 <script>
 window.TOKEN = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
 if (!TOKEN) location.href = "/login.html";
@@ -311,6 +327,73 @@ function createUser() {
   });
 }
 
+function renderEmptyPanel(title, desc, compact) {
+  return '<div class="empty-panel ' + (compact ? 'compact' : '') + '"><div class="empty-panel-copy"><div class="empty-panel-title">' + App.escapeHtml(title) + '</div><div class="empty-panel-desc">' + App.escapeHtml(desc) + '</div></div></div>';
+}
+
+function renderActivityAudience(audience) {
+  return audience === 'TEACHERS' ? '教师' : audience === 'STUDENTS' ? '学生' : '全部师生';
+}
+
+function renderActivityStatus(status) {
+  return status === 'ARCHIVED' ? '已归档' : status === 'PUBLISHED' ? '已发布' : '草稿';
+}
+
+function renderActivityStatusClass(status) {
+  return status === 'ARCHIVED' ? 'bg-secondary bg-opacity-10 text-secondary' : status === 'PUBLISHED' ? 'bg-success bg-opacity-10 text-success' : 'bg-warning bg-opacity-10 text-warning';
+}
+
+function openActivityModal(activity) {
+  activityId.value = activity && activity.id ? activity.id : '';
+  activityTitle.value = activity && activity.title ? activity.title : '';
+  activityContent.value = activity && activity.content ? activity.content : '';
+  activityAudience.value = activity && activity.audience ? activity.audience : 'ALL';
+  activityLink.value = activity && activity.link ? activity.link : '';
+  activityModalTitle.textContent = activity && activity.id ? '编辑活动' : '发布活动';
+  new bootstrap.Modal(document.getElementById('activityModal')).show();
+}
+
+function saveActivity() {
+  var id = activityId.value;
+  var path = id ? '/admin/activities/' + id : '/admin/activities';
+  var method = id ? 'PUT' : 'POST';
+  return api(path, method, {
+    title: activityTitle.value.trim(),
+    content: activityContent.value.trim(),
+    audience: activityAudience.value,
+    link: activityLink.value.trim() || null
+  }).then(function() {
+    bootstrap.Modal.getInstance(document.getElementById('activityModal')).hide();
+    App.toast(id ? '活动已更新' : '活动已发布', 'success');
+    loadActivities();
+  }).catch(function(err) {
+    App.toast(err.message || '保存失败', 'danger');
+  });
+}
+
+function publishActivity() {
+  return saveActivity();
+}
+
+function deleteActivity(id) {
+  if (!confirm('确认删除该活动吗？')) return Promise.resolve();
+  return api('/admin/activities/' + id, 'DELETE').then(function() {
+    App.toast('活动已删除', 'success');
+    loadActivities();
+  }).catch(function(err) {
+    App.toast(err.message || '删除失败', 'danger');
+  });
+}
+
+function republishActivity(id) {
+  return api('/admin/activities/' + id + '/republish', 'POST').then(function() {
+    App.toast('活动已重新发布', 'success');
+    loadActivities();
+  }).catch(function(err) {
+    App.toast(err.message || '重新发布失败', 'danger');
+  });
+}
+
 function loadDashboard() {
   return api("/admin/dashboard").then(function(data) {
     currentDashboard = data;
@@ -335,27 +418,34 @@ function renderDashboard(data) {
     quickAction("查看课程", "fa-book", "switchTab('courses')"),
     quickAction("查看日志", "fa-clock-rotate-left", "switchTab('logs')"),
     quickAction("系统监控", "fa-heart-pulse", "switchTab('monitor')"),
+    quickAction("发布活动", "fa-bullhorn", "openActivityModal()"),
     quickAction("导出用户", "fa-file-csv", "App.downloadFile('/admin/users/export','users.csv')")
   ].join("");
 
-  document.getElementById("todoGrid").innerHTML = (data.todoItems || []).map(function(item) {
-    return '<div class="todo-item" onclick="switchTab(\'' + item.tab + '\')"><div><div class="fw-semibold">' + App.escapeHtml(formatTodoText(item)) + '</div><div class="small text-muted">点击前往处理页面</div></div><i class="fa-solid fa-chevron-right text-muted"></i></div>';
-  }).join("") || '<div class="text-muted small">暂无待办事项</div>';
+  document.getElementById("todoGrid").innerHTML = (data.todoItems || []).length
+    ? (data.todoItems || []).map(function(item) {
+        return '<div class="todo-item" onclick="switchTab(\'' + item.tab + '\')"><div><div class="fw-semibold">' + App.escapeHtml(formatTodoText(item)) + '</div><div class="small text-muted">点击前往处理页面</div></div><i class="fa-solid fa-chevron-right text-muted"></i></div>';
+      }).join("")
+    : renderEmptyPanel('暂无待办事项', '当前没有需要立刻处理的管理任务。', true);
 
-  document.getElementById("topCoursesRank").innerHTML = (data.topCourses || []).map(function(item, index) {
-    return '<div class="rank-item"><div><div class="fw-semibold">TOP ' + (index + 1) + ' · ' + App.escapeHtml(item.name || "-") + '</div><div class="small text-muted">教师：' + App.escapeHtml(item.teacher || "-") + '</div></div><span class="badge text-bg-primary">' + (item.value || 0) + ' 人</span></div>';
-  }).join("") || '<div class="text-muted small">暂无课程数据</div>';
+  document.getElementById("topCoursesRank").innerHTML = (data.topCourses || []).length
+    ? (data.topCourses || []).map(function(item, index) {
+        return '<div class="rank-item"><div><div class="fw-semibold">TOP ' + (index + 1) + ' · ' + App.escapeHtml(item.name || "未命名课程") + '</div><div class="small text-muted">教师：' + App.escapeHtml(item.teacher || "未分配教师") + '</div></div><span class="badge text-bg-primary">' + (item.value || 0) + ' 人</span></div>';
+      }).join("")
+    : renderEmptyPanel('暂无课程排行', '课程有选课记录后，会在这里显示热门课程。', true);
 
-  document.getElementById("overviewExtra").innerHTML = '<div class="section-card overview-summary-card"><div class="section-head"><h5 class="mb-0">待审核内容拆分</h5></div><div class="overview-summary-grid">' +
-    '<div class="monitor-mini-card"><div class="overview-label">教师课程申请</div><div class="overview-stat">' + (data.pendingTeacherRequests || 0) + '</div></div>' +
-    '<div class="monitor-mini-card"><div class="overview-label">用户上传资源</div><div class="overview-stat">' + (data.pendingResourceUploads || 0) + '</div></div>' +
-    '<div class="monitor-mini-card ' + (data.storageWarningLow ? 'alert' : '') + '"><div class="overview-label">存储状态</div><div class="overview-stat" style="font-size:18px">' + App.escapeHtml(formatStorageStatus(data)) + '</div></div>' +
-    '<div class="monitor-mini-card"><div class="overview-label">用户申诉</div><div class="overview-stat">' + (data.pendingAppeals || 0) + '</div></div>' +
-  '</div></div>';
+  var overviewCards = [];
+  if ((data.pendingTeacherRequests || 0) > 0) overviewCards.push('<div class="monitor-mini-card"><div class="overview-label">教师课程申请</div><div class="overview-stat">' + (data.pendingTeacherRequests || 0) + '</div></div>');
+  if ((data.pendingResourceUploads || 0) > 0) overviewCards.push('<div class="monitor-mini-card"><div class="overview-label">用户上传资源</div><div class="overview-stat">' + (data.pendingResourceUploads || 0) + '</div></div>');
+  if ((data.pendingAppeals || 0) > 0) overviewCards.push('<div class="monitor-mini-card"><div class="overview-label">用户申诉</div><div class="overview-stat">' + (data.pendingAppeals || 0) + '</div></div>');
+  if (data.storageWarningLow) overviewCards.push('<div class="monitor-mini-card alert"><div class="overview-label">存储状态</div><div class="overview-stat metric-value alert" style="font-size:18px">' + App.escapeHtml(formatStorageStatus(data)) + '</div></div>');
+  document.getElementById("overviewExtra").innerHTML = overviewCards.length
+    ? '<div class="section-card overview-summary-card"><div class="section-head"><h5 class="mb-0">待办内容拆分</h5><span class="metric-muted">聚焦当前需要处理的事项</span></div><div class="overview-summary-grid">' + overviewCards.join('') + '</div></div>'
+    : '';
 
   renderVisitChart(data.recentVisits || []);
-  renderRoleChart(data.roleDistribution || []);
-  renderUserTrendChart(data);
+  renderRoleChart((data.roleDistribution || []).filter(function(item) { return Number(item.value || 0) > 0; }));
+  renderActivities(data.activities || []);
 }
 
 function formatTodoText(item) {
@@ -384,6 +474,11 @@ function quickAction(label, icon, handler) {
 
 function renderVisitChart(visits) {
   var chartEl = document.getElementById("chartVisits");
+  if (!visits.length) {
+    chartEl.innerHTML = renderEmptyPanel('暂无活跃数据', '产生登录活跃记录后，这里会展示近 7 天活跃用户趋势。', false);
+    return;
+  }
+  chartEl.innerHTML = '';
   charts.visits = charts.visits || echarts.init(chartEl);
   charts.visits.setOption({
     tooltip: { trigger: "axis" },
@@ -396,26 +491,27 @@ function renderVisitChart(visits) {
 
 function renderRoleChart(items) {
   var chartEl = document.getElementById("chartRoles");
+  var safeItems = (items || []).filter(function(item) { return Number(item.value || 0) > 0; });
+  if (!safeItems.length) {
+    chartEl.innerHTML = '<div class="activity-page-list">' + [
+      { name: '学生', value: 0 },
+      { name: '教师', value: 0 },
+      { name: '管理员', value: 0 }
+    ].map(function(item) {
+      return '<div class="activity-item"><div class="activity-title">' + App.escapeHtml(item.name) + '</div><div class="activity-content">当前人数 ' + item.value + ' 人</div></div>';
+    }).join('') + '</div>';
+    return;
+  }
+  chartEl.innerHTML = '';
   charts.roles = charts.roles || echarts.init(chartEl);
   charts.roles.setOption({
-    tooltip: { trigger: "item" },
-    series: [{ type: "pie", radius: ["45%", "72%"], data: items, label: { formatter: "{b}\n{d}%" } }]
-  });
-}
-
-function renderUserTrendChart(data) {
-  var chartEl = document.getElementById("chartUsers");
-  charts.users = charts.users || echarts.init(chartEl);
-  charts.users.setOption({
-    tooltip: { trigger: "axis" },
-    legend: { data: ["学生", "教师", "管理员"] },
-    xAxis: { type: "category", data: ["当前存量", "本周新增", "今日活跃"] },
-    yAxis: { type: "value" },
-    series: [
-      { name: "学生", type: "bar", data: [data.totalStudents || 0, Math.max(0, (data.weeklyNewUsers || 0) - 1), Math.max(0, (data.todayActiveUsers || 0) - 1)] },
-      { name: "教师", type: "bar", data: [data.totalTeachers || 0, 1, 1] },
-      { name: "管理员", type: "bar", data: [data.totalAdmins || 0, 0, 1] }
-    ]
+    tooltip: {
+      trigger: "item",
+      formatter: function(params) {
+        return params.name + '：' + params.value + ' 人（' + params.percent + '%）';
+      }
+    },
+    series: [{ type: "pie", radius: ["45%", "72%"], data: safeItems, label: { formatter: function(params) { return params.name + '\n' + params.value + '人'; } } }]
   });
 }
 
@@ -430,6 +526,33 @@ function renderUserPager(total, page) {
   return html;
 }
 
+function renderActivities(list) {
+  document.getElementById('activityPanel').innerHTML = list && list.length
+    ? '<div class="d-flex flex-column gap-3">' + list.map(function(item) {
+        return '<div class="section-surface"><div class="d-flex justify-content-between align-items-start gap-3 flex-wrap"><div class="flex-grow-1"><div class="fw-semibold">' + App.escapeHtml(item.title || '未命名活动') + '</div><div class="small text-muted mt-1">' + App.escapeHtml(item.content || '暂无活动内容') + '</div><div class="small text-muted mt-2">发布时间：' + App.fmtTime(item.publishedAt) + ' · 受众：' + App.escapeHtml(renderActivityAudience(item.audience)) + ' · 版本：' + (item.publishVersion || 1) + '</div></div><div class="d-flex flex-column align-items-end gap-2"><span class="badge-soft ' + renderActivityStatusClass(item.status) + '">' + renderActivityStatus(item.status) + '</span><div class="d-flex gap-2 flex-wrap justify-content-end"><button class="btn btn-outline-primary btn-sm" onclick="editActivity(' + item.id + ')">编辑</button><button class="btn btn-outline-warning btn-sm" onclick="republishActivity(' + item.id + ')">重新发布</button><button class="btn btn-outline-danger btn-sm" onclick="deleteActivity(' + item.id + ')">删除</button></div></div></div></div>';
+      }).join('') + '</div>'
+    : renderEmptyPanel('暂无活动记录', '发布活动后，这里会显示可编辑、可删除、可重新发布的活动列表。', false);
+}
+
+function renderActivities(list) {
+  document.getElementById('activityPanel').innerHTML = list && list.length
+    ? '<div class="d-flex flex-column gap-3">' + list.map(function(item) {
+        return '<div class="section-surface"><div class="d-flex justify-content-between align-items-start gap-3 flex-wrap"><div class="flex-grow-1"><div class="fw-semibold">' + App.escapeHtml(item.title || '未命名活动') + '</div><div class="small text-muted mt-1">' + App.escapeHtml(item.content || '暂无活动内容') + '</div><div class="small text-muted mt-2">发布时间：' + App.fmtTime(item.publishedAt) + ' · 受众：' + App.escapeHtml(renderActivityAudience(item.audience)) + ' · 版本：' + (item.publishVersion || 1) + '</div></div><div class="d-flex flex-column align-items-end gap-2"><span class="badge-soft ' + renderActivityStatusClass(item.status) + '">' + renderActivityStatus(item.status) + '</span><div class="d-flex gap-2 flex-wrap justify-content-end"><button class="btn btn-outline-primary btn-sm" onclick="editActivity(' + item.id + ')">编辑</button><button class="btn btn-outline-warning btn-sm" onclick="republishActivity(' + item.id + ')">重新发布</button><button class="btn btn-outline-danger btn-sm" onclick="deleteActivity(' + item.id + ')">删除</button></div></div></div></div>';
+      }).join('') + '</div>'
+    : renderEmptyPanel('暂无活动记录', '发布活动后，这里会显示可编辑、可删除、可重新发布的活动列表。', false);
+}
+
+function editActivity(id) {
+  return api('/admin/activities').then(function(list) {
+    var activity = (list || []).find(function(item) { return item.id === id; });
+    if (!activity) {
+      App.toast('活动不存在', 'warning');
+      return;
+    }
+    openActivityModal(activity);
+  });
+}
+
 function loadUsers() {
   var kw = encodeURIComponent(userKeyword.value || "");
   var role = encodeURIComponent(userRole.value || "");
@@ -441,9 +564,11 @@ function loadUsers() {
       userPage = pages;
       return loadUsers();
     }
-    document.getElementById("userBox").innerHTML = '<div class="table-wrap"><table class="table table-hover align-middle"><thead><tr><th>ID</th><th>用户名</th><th>显示名称</th><th>邮箱</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>' + (page.content || []).map(function(u) {
-      return '<tr><td>' + u.id + '</td><td>' + App.escapeHtml(u.username || "-") + '</td><td>' + App.escapeHtml(u.displayName || "-") + '</td><td>' + App.escapeHtml(u.email || "-") + '</td><td><span class="badge-soft ' + (u.role === "ADMIN" ? "bg-primary bg-opacity-10 text-primary" : u.role === "TEACHER" ? "bg-success bg-opacity-10 text-success" : "bg-info bg-opacity-10 text-info") + '">' + App.escapeHtml(u.role || "-") + '</span></td><td>' + (u.enabled ? '<span class="status-pill"><span class="color-dot bg-success"></span>启用</span>' : '<span class="status-pill" style="background:rgba(220,38,38,.12);color:#dc2626"><span class="color-dot bg-danger"></span>禁用</span>') + '</td><td class="d-flex gap-1 flex-wrap"><button class="btn btn-outline-secondary btn-sm" onclick="resetPassword(' + u.id + ')"><i class="fa-solid fa-key"></i></button><button class="btn btn-outline-primary btn-sm" onclick="toggleUser(' + u.id + ')"><i class="fa-solid fa-toggle-on"></i></button><button class="btn btn-outline-danger btn-sm" onclick="deleteUser(' + u.id + ')"><i class="fa-solid fa-trash"></i></button></td></tr>';
-    }).join("") + '</tbody></table>' + renderUserPager(total, userPage) + '</div>';
+    document.getElementById("userBox").innerHTML = (page.content || []).length
+      ? '<div class="table-wrap"><table class="table table-hover align-middle"><thead><tr><th>ID</th><th>用户名</th><th>显示名称</th><th>邮箱</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody>' + (page.content || []).map(function(u) {
+          return '<tr><td>' + u.id + '</td><td>' + App.escapeHtml(u.username || "-") + '</td><td>' + App.escapeHtml(u.displayName || "未填写") + '</td><td>' + App.escapeHtml(u.email || "未填写邮箱") + '</td><td><span class="badge-soft ' + (u.role === "ADMIN" ? "bg-primary bg-opacity-10 text-primary" : u.role === "TEACHER" ? "bg-success bg-opacity-10 text-success" : "bg-info bg-opacity-10 text-info") + '">' + App.escapeHtml(u.role || "-") + '</span></td><td>' + (u.enabled ? '<span class="status-pill"><span class="color-dot bg-success"></span>启用</span>' : '<span class="status-pill" style="background:rgba(220,38,38,.12);color:#dc2626"><span class="color-dot bg-danger"></span>禁用</span>') + '</td><td class="d-flex gap-1 flex-wrap"><button class="btn btn-outline-secondary btn-sm" onclick="resetPassword(' + u.id + ')"><i class="fa-solid fa-key"></i></button><button class="btn btn-outline-primary btn-sm" onclick="toggleUser(' + u.id + ')"><i class="fa-solid fa-toggle-on"></i></button><button class="btn btn-outline-danger btn-sm" onclick="deleteUser(' + u.id + ')"><i class="fa-solid fa-trash"></i></button></td></tr>';
+        }).join("") + '</tbody></table>' + renderUserPager(total, userPage) + '</div>'
+      : renderEmptyPanel('暂无用户数据', '当前筛选条件下没有匹配的用户记录。', false);
   });
 }
 
@@ -463,11 +588,13 @@ function loadCourses() {
     var kw = encodeURIComponent(courseKeyword.value || "");
     return api("/admin/courses/page?page=0&size=30&keyword=" + kw).then(function(page) {
       currentCoursePage = (page && page.content) || [];
-      document.getElementById("courseBox").innerHTML = '<div class="table-wrap"><table class="table table-hover align-middle admin-course-table"><thead><tr><th><input type="checkbox" onchange="toggleAllCourses(this.checked)"></th><th>ID</th><th>课程</th><th>教师</th><th>时间</th><th>分类</th><th>容量</th><th>状态</th><th>操作</th></tr></thead><tbody>' + currentCoursePage.map(function(c) {
-        var teacherName = c.teacher ? (c.teacher.displayName || c.teacher.username || "-") : "-";
-        var visible = c.visible === false ? '<span class="badge text-bg-secondary">已下架</span>' : '<span class="badge text-bg-success">已上架</span>';
-        return '<tr><td><input type="checkbox" class="course-select" value="' + c.id + '"></td><td>' + c.id + '</td><td><div class="fw-semibold text-truncate">' + App.escapeHtml(c.name || "-") + '</div><div class="small text-muted text-truncate">' + App.escapeHtml(c.description || "-") + '</div></td><td class="text-truncate">' + App.escapeHtml(teacherName) + '</td><td class="text-truncate">' + App.escapeHtml(c.schedule || "-") + '</td><td class="text-truncate">' + App.escapeHtml(c.category || "-") + '</td><td>' + (c.enrolledCount || 0) + '/' + (c.maxStudents || 0) + '</td><td>' + visible + '</td><td><div class="admin-course-actions"><button class="btn btn-outline-primary btn-sm" onclick="openCourseEdit(' + c.id + ')">编辑信息</button><button class="btn btn-outline-secondary btn-sm" onclick="openEnrollmentAdjust(' + c.id + ')">调整选课</button><button class="btn btn-outline-warning btn-sm" onclick="toggleCourseVisibility(' + c.id + ')">' + (c.visible === false ? '上架' : '下架') + '</button><button class="btn btn-outline-danger btn-sm" onclick="deleteCourse(' + c.id + ')">删除课程</button></div></td></tr>';
-      }).join("") + '</tbody></table></div>';
+      document.getElementById("courseBox").innerHTML = currentCoursePage.length
+        ? '<div class="table-wrap"><table class="table table-hover align-middle admin-course-table"><thead><tr><th><input type="checkbox" onchange="toggleAllCourses(this.checked)"></th><th>ID</th><th>课程</th><th>教师</th><th>时间</th><th>分类</th><th>容量</th><th>状态</th><th>操作</th></tr></thead><tbody>' + currentCoursePage.map(function(c) {
+            var teacherName = c.teacher ? (c.teacher.displayName || c.teacher.username || "-") : "-";
+            var visible = c.visible === false ? '<span class="badge text-bg-secondary">已下架</span>' : '<span class="badge text-bg-success">已上架</span>';
+            return '<tr><td><input type="checkbox" class="course-select" value="' + c.id + '"></td><td>' + c.id + '</td><td><div class="fw-semibold text-truncate">' + App.escapeHtml(c.name || "未命名课程") + '</div><div class="small text-muted text-truncate">' + App.escapeHtml(c.description || "暂无课程简介") + '</div></td><td class="text-truncate">' + App.escapeHtml(teacherName) + '</td><td class="text-truncate">' + App.escapeHtml(c.schedule || "时间待定") + '</td><td class="text-truncate">' + App.escapeHtml(c.category || "未分类") + '</td><td>' + (c.enrolledCount || 0) + '/' + (c.maxStudents || 0) + '</td><td>' + visible + '</td><td><div class="admin-course-actions"><button class="btn btn-outline-primary btn-sm" onclick="openCourseEdit(' + c.id + ')">编辑信息</button><button class="btn btn-outline-secondary btn-sm" onclick="openEnrollmentAdjust(' + c.id + ')">调整选课</button><button class="btn btn-outline-warning btn-sm" onclick="toggleCourseVisibility(' + c.id + ')">' + (c.visible === false ? '上架' : '下架') + '</button><button class="btn btn-outline-danger btn-sm" onclick="deleteCourse(' + c.id + ')">删除课程</button></div></td></tr>';
+          }).join("") + '</tbody></table></div>'
+        : renderEmptyPanel('暂无课程数据', '当前筛选条件下没有可管理的课程。', false);
     });
   });
 }
@@ -531,9 +658,15 @@ function openEnrollmentAdjust(id) {
     }).map(function(student) {
       return '<option value="' + student.id + '">' + App.escapeHtml((student.displayName || student.username || "-") + "（" + (student.username || "-") + "）") + '</option>';
     }).join("");
+    if (!enrollmentAddStudents.innerHTML) {
+      enrollmentAddStudents.innerHTML = '<option disabled>暂无可添加学生</option>';
+    }
     enrollmentRemoveStudents.innerHTML = selectedStudents.map(function(student) {
       return '<option value="' + student.id + '">' + App.escapeHtml((student.displayName || student.username || "-") + "（" + (student.username || "-") + "）") + '</option>';
     }).join("");
+    if (!enrollmentRemoveStudents.innerHTML) {
+      enrollmentRemoveStudents.innerHTML = '<option disabled>当前无人可移除</option>';
+    }
     renderEnrollmentStudentTable(selectedStudents);
     new bootstrap.Modal(document.getElementById("enrollmentModal")).show();
   });
@@ -603,9 +736,11 @@ function batchDeleteCourses() {
 function loadLogs() {
   return api("/admin/logs/page?page=0&size=20").then(function(page) {
     page = page || { content: [] };
-    document.getElementById("logBox").innerHTML = '<div class="table-wrap"><table class="table table-sm align-middle"><thead><tr><th>时间</th><th>用户</th><th>角色</th><th>动作</th><th>详情</th><th>IP</th></tr></thead><tbody>' + (page.content || []).map(function(l) {
-      return '<tr><td>' + App.fmtTime(l.timestamp) + '</td><td>' + App.escapeHtml(l.username || "-") + '</td><td>' + App.escapeHtml(l.role || "-") + '</td><td>' + App.escapeHtml(l.action || "-") + '</td><td>' + App.escapeHtml(l.details || "-") + '</td><td>' + App.escapeHtml(l.ipAddress || "-") + '</td></tr>';
-    }).join("") + '</tbody></table></div>';
+    document.getElementById("logBox").innerHTML = (page.content || []).length
+      ? '<div class="table-wrap"><table class="table table-sm align-middle"><thead><tr><th>时间</th><th>用户</th><th>角色</th><th>动作</th><th>详情</th><th>IP</th></tr></thead><tbody>' + (page.content || []).map(function(l) {
+          return '<tr><td>' + App.fmtTime(l.timestamp) + '</td><td>' + App.escapeHtml(l.username || "-") + '</td><td>' + App.escapeHtml(l.role || "-") + '</td><td>' + App.escapeHtml(l.action || "-") + '</td><td>' + App.escapeHtml(l.details || "-") + '</td><td>' + App.escapeHtml(l.ipAddress || "-") + '</td></tr>';
+        }).join("") + '</tbody></table></div>'
+      : renderEmptyPanel('暂无审计日志', '当前没有可展示的审计记录。', false);
   });
 }
 
@@ -659,11 +794,15 @@ function formatHealthItem(item, index) {
 
 function loadMonitor() {
   return api("/admin/monitor").then(function(m) {
-    document.getElementById("monitorBox").innerHTML = '<div class="monitor-metric-grid">' + (m.resourceMetrics || []).map(function(metric, index) {
-      return '<div class="monitor-mini-card ' + (metric.alert ? 'alert' : '') + '"><div class="overview-label">' + App.escapeHtml(formatMonitorMetricName(metric.name, index)) + '</div><div class="overview-stat metric-value ' + (metric.alert ? 'alert' : '') + '">' + (metric.value == null ? 0 : metric.value) + '%</div><div class="small text-muted">安全阈值：' + (metric.threshold == null ? 0 : metric.threshold) + '%</div></div>';
-    }).join("") + '</div><div class="monitor-metric-grid mt-3">' + (m.dbMetrics || []).map(function(metric, index) {
-      return '<div class="monitor-mini-card ' + (metric.alert ? 'alert' : '') + '"><div class="overview-label">' + App.escapeHtml(formatDbMetricName(metric.name, index)) + '</div><div class="overview-stat metric-value ' + (metric.alert ? 'alert' : '') + '">' + App.escapeHtml(metric.value == null ? 0 : metric.value) + '</div><div class="small text-muted">阈值：' + App.escapeHtml(metric.threshold == null ? 0 : metric.threshold) + '</div></div>';
-    }).join("") + '</div><div class="mt-3 small text-muted">系统状态：' + App.escapeHtml(formatMonitorStatus(m.status)) + '，运行时长：' + App.escapeHtml(m.uptime || "-") + '，数据库：' + App.escapeHtml(formatDbStatus()) + '</div>';
+    var resourceMetrics = m.resourceMetrics || [];
+    var dbMetrics = m.dbMetrics || [];
+    document.getElementById("monitorBox").innerHTML = (resourceMetrics.length || dbMetrics.length)
+      ? '<div class="monitor-metric-grid">' + resourceMetrics.map(function(metric, index) {
+          return '<div class="monitor-mini-card ' + (metric.alert ? 'alert' : '') + '"><div class="overview-label">' + App.escapeHtml(formatMonitorMetricName(metric.name, index)) + '</div><div class="overview-stat metric-value ' + (metric.alert ? 'alert' : '') + '">' + (metric.value == null ? 0 : metric.value) + '%</div><div class="small text-muted">安全阈值：' + (metric.threshold == null ? 0 : metric.threshold) + '%</div></div>';
+        }).join("") + '</div><div class="monitor-metric-grid mt-3">' + dbMetrics.map(function(metric, index) {
+          return '<div class="monitor-mini-card ' + (metric.alert ? 'alert' : '') + '"><div class="overview-label">' + App.escapeHtml(formatDbMetricName(metric.name, index)) + '</div><div class="overview-stat metric-value ' + (metric.alert ? 'alert' : '') + '">' + App.escapeHtml(metric.value == null ? 0 : metric.value) + '</div><div class="small text-muted">阈值：' + App.escapeHtml(metric.threshold == null ? 0 : metric.threshold) + '</div></div>';
+        }).join("") + '</div><div class="mt-3 small text-muted">系统状态：' + App.escapeHtml(formatMonitorStatus(m.status)) + '，运行时长：' + App.escapeHtml(m.uptime || "-") + '，数据库：' + App.escapeHtml(formatDbStatus()) + '</div>'
+      : renderEmptyPanel('暂无系统监控数据', '系统产生运行指标后，会在这里显示资源和数据库监控。', false);
     renderResourceMonitorChart(m.resourceTrend || []);
     renderServiceMonitorChart(m.serviceTrend || {});
     renderErrorChart(m.errorStats || {});
@@ -674,6 +813,11 @@ function loadMonitor() {
 
 function renderResourceMonitorChart(items) {
   var chartEl = document.getElementById("monitorResourceChart");
+  if (!items.length) {
+    chartEl.innerHTML = renderEmptyPanel('暂无资源趋势', '采集到资源波动后，这里会展示 CPU、内存、磁盘和带宽趋势。', false);
+    return;
+  }
+  chartEl.innerHTML = '';
   charts.monitorResource = charts.monitorResource || echarts.init(chartEl);
   charts.monitorResource.setOption({
     tooltip: { trigger: "axis" },
@@ -689,6 +833,11 @@ function renderResourceMonitorChart(items) {
 
 function renderServiceMonitorChart(data) {
   var chartEl = document.getElementById("monitorServiceChart");
+  if (!(data.labels || []).length) {
+    chartEl.innerHTML = renderEmptyPanel('暂无服务趋势', '有接口请求统计后，这里会展示成功率、响应时间和 QPS。', false);
+    return;
+  }
+  chartEl.innerHTML = '';
   charts.monitorService = charts.monitorService || echarts.init(chartEl);
   charts.monitorService.setOption({
     tooltip: { trigger: "axis" },
@@ -705,6 +854,11 @@ function renderServiceMonitorChart(data) {
 
 function renderErrorChart(data) {
   var chartEl = document.getElementById("monitorErrorChart");
+  if (!(data.types || []).length) {
+    chartEl.innerHTML = renderEmptyPanel('暂无错误分布', '出现异常统计后，这里会展示错误类型分布。', false);
+    return;
+  }
+  chartEl.innerHTML = '';
   charts.monitorError = charts.monitorError || echarts.init(chartEl);
   charts.monitorError.setOption({
     tooltip: { trigger: "item" },
@@ -716,15 +870,19 @@ function renderErrorChart(data) {
 }
 
 function renderAlertBox(alerts) {
-  document.getElementById("alertBox").innerHTML = '<div class="table-wrap"><table class="table table-sm align-middle"><thead><tr><th>级别</th><th>告警内容</th><th>发生时间</th><th>处理状态</th></tr></thead><tbody>' + alerts.map(function(item, index) {
-    var level = formatAlertLevel(item.level);
-    var badge = level === "严重" ? "danger" : "warning";
-    return '<tr><td><span class="badge text-bg-' + badge + '">' + App.escapeHtml(level) + '</span></td><td>' + App.escapeHtml(formatAlertTitle(item.title, index)) + '</td><td>' + App.escapeHtml(item.time || "-") + '</td><td>' + App.escapeHtml(formatAlertStatus(item.status, index)) + '</td></tr>';
-  }).join("") + '</tbody></table></div>';
+  document.getElementById("alertBox").innerHTML = alerts.length
+    ? '<div class="table-wrap"><table class="table table-sm align-middle"><thead><tr><th>级别</th><th>告警内容</th><th>发生时间</th><th>处理状态</th></tr></thead><tbody>' + alerts.map(function(item, index) {
+        var level = formatAlertLevel(item.level);
+        var badge = level === "严重" ? "danger" : "warning";
+        return '<tr><td><span class="badge text-bg-' + badge + '">' + App.escapeHtml(level) + '</span></td><td>' + App.escapeHtml(formatAlertTitle(item.title, index)) + '</td><td>' + App.escapeHtml(item.time || "-") + '</td><td>' + App.escapeHtml(formatAlertStatus(item.status, index)) + '</td></tr>';
+      }).join("") + '</tbody></table></div>'
+    : renderEmptyPanel('暂无系统告警', '当前没有需要处理的系统告警。', true);
 }
 
 function renderHealthReport(report) {
-  document.getElementById("healthReportBox").innerHTML = '<div class="monitor-mini-card"><div class="fw-semibold mb-2">' + App.escapeHtml(formatHealthSummary(report)) + '</div><div class="small text-muted mb-3">检测时间：' + App.escapeHtml(report.checkedAt || "-") + '</div>' + ((report.abnormalItems || []).length ? '<ul class="mb-0">' + report.abnormalItems.map(function(item, index) { return '<li class="mb-1">' + App.escapeHtml(formatHealthItem(item, index)) + '</li>'; }).join("") + '</ul>' : '<div class="text-success">未发现异常项</div>') + '</div>';
+  document.getElementById("healthReportBox").innerHTML = report && ((report.abnormalItems || []).length || report.checkedAt)
+    ? '<div class="monitor-mini-card"><div class="fw-semibold mb-2">' + App.escapeHtml(formatHealthSummary(report)) + '</div><div class="small text-muted mb-3">检测时间：' + App.escapeHtml(report.checkedAt || "-") + '</div>' + ((report.abnormalItems || []).length ? '<ul class="mb-0">' + report.abnormalItems.map(function(item, index) { return '<li class="mb-1">' + App.escapeHtml(formatHealthItem(item, index)) + '</li>'; }).join("") + '</ul>' : '<div class="text-success">未发现异常项</div>') + '</div>'
+    : renderEmptyPanel('暂无健康报告', '执行健康检查后，这里会显示诊断结论。', true);
 }
 
 function runHealthCheck() {

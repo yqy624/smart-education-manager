@@ -7,7 +7,7 @@
   <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
   <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js?v=20240630"></script>
-  <link href="/css/app.css?v=20260703" rel="stylesheet">
+  <link href="/css/app.css?v=20260705" rel="stylesheet">
 </head>
 <body class="page-shell" data-role="teacher">
 <div class="dashboard-shell">
@@ -56,9 +56,9 @@
         <div class="desc">管理课程与作业，开放匿名互评，查看学生参与情况和成绩分析。</div>
       </div>
       <div class="kpi-grid mb-3" id="kpiGrid"></div>
-      <div class="row g-3">
-        <div class="col-lg-8"><div class="section-card"><div id="chartCourses" style="height:320px"></div></div></div>
-        <div class="col-lg-4"><div class="section-card" id="recentActivityBox"><h6 class="mb-3">近期活动</h6><div id="recentActivityList" class="text-muted small">加载中...</div></div></div>
+      <div class="row g-3 align-items-stretch">
+        <div class="col-lg-8"><div class="section-card dashboard-card-fill"><div class="section-head"><h5 class="mb-0">课程选课趋势</h5><span class="metric-muted">按课程查看当前选课人数</span></div><div class="card-body-fill"><div id="chartCourses" style="height:320px"></div></div></div></div>
+        <div class="col-lg-4"><div class="section-card dashboard-card-fill" id="recentActivityBox"><div class="section-head"><h5 class="mb-0">近期活动</h5><span class="metric-muted">管理员发布动态</span></div><div class="card-body-fill"><div id="recentActivityList" class="text-muted small">加载中...</div></div></div></div>
       </div>
     </section>
     <section id="view-courses" class="view d-none"><div class="section-card" id="courseBox"></div></section>
@@ -179,7 +179,7 @@
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
               <div class="fw-semibold">快捷评语</div>
               <div class="btn-group btn-group-sm" role="group">
-                <button class="btn btn-outline-primary active" type="button" data-category="" onclick="loadQuickComments()">全部</button>
+                <button class="btn btn-outline-primary active" type="button" data-category="all" onclick="loadQuickComments('all')">全部</button>
                 <button class="btn btn-outline-primary" type="button" data-category="ENCOURAGEMENT" onclick="loadQuickComments('ENCOURAGEMENT')">鼓励</button>
                 <button class="btn btn-outline-primary" type="button" data-category="CORRECTION" onclick="loadQuickComments('CORRECTION')">纠错</button>
                 <button class="btn btn-outline-primary" type="button" data-category="SCORE_IMPROVEMENT" onclick="loadQuickComments('SCORE_IMPROVEMENT')">提分</button>
@@ -196,7 +196,7 @@
 </div>
 
 <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
-<script src="/js/app.js?v=20260703"></script>
+<script src="/js/app.js?v=20260705"></script>
 <script>
 window.TOKEN = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
 if (!TOKEN) location.href = "/login.html";
@@ -211,8 +211,10 @@ var tabs = Array.from(document.querySelectorAll(".nav-item"));
 var teacherCourses = [];
 var teacherAssignments = [];
 var gradingSubmissionMeta = {};
-var quickCommentCategory = null;
 var currentGradeRow = null;
+var teacherActivityPage = 1;
+var teacherActivityPageSize = 3;
+var quickCommentCategory = 'all';
 tabs.forEach(function(el) { el.addEventListener("click", function() { switchTab(el.dataset.tab); }); });
 function switchTab(tab) {
   tabs.forEach(function(x) { x.classList.toggle("active", x.dataset.tab === tab); });
@@ -281,50 +283,111 @@ function handleKpiKey(event, tab) {
   }
 }
 
-async function loadDashboard() {
-  var courses = await api("/teacher/courses");
-  var totalStudents = courses.reduce(function(a, c) { return a + (c.enrolledCount || 0); }, 0);
-  var activeCourses = courses.filter(function(c) { return (c.enrolledCount || 0) > 0; }).length;
-  var peerEnabled = 0;
-  for (var ci = 0; ci < courses.length; ci++) {
-    var list = await api("/teacher/courses/" + courses[ci].id + "/assignments");
-    peerEnabled += list.filter(function(a) { return a.peerReviewEnabled; }).length;
+function renderEmptyPanel(title, desc, compact) {
+  return '<div class="empty-panel ' + (compact ? 'compact' : '') + '"><div class="empty-panel-copy"><div class="empty-panel-title">' + App.escapeHtml(title) + '</div><div class="empty-panel-desc">' + App.escapeHtml(desc) + '</div></div></div>';
+}
+
+function humanFileLabel(filePaths) {
+  if (!filePaths) return '无附件';
+  return filePaths.split(',').map(function(item) {
+    var value = String(item || '').trim();
+    if (!value) return null;
+    var parts = value.split('::');
+    return parts[1] || '已上传附件';
+  }).filter(Boolean).join('、') || '无附件';
+}
+
+function previewStoredFile(path) {
+  return App.previewFile(path);
+}
+
+function downloadStoredFile(path, name) {
+  return App.downloadFile('/files/download?path=' + encodeURIComponent(path), name || '附件');
+}
+
+function renderActivityPager(total, page, action) {
+  var pages = Math.max(1, Math.ceil(total / teacherActivityPageSize));
+  if (pages <= 1) return '';
+  var html = '<div class="activity-pager"><button class="btn btn-outline-secondary btn-sm" onclick="' + action + '(' + Math.max(1, page - 1) + ')" ' + (page <= 1 ? 'disabled' : '') + '>上一页</button>';
+  for (var i = 1; i <= pages; i++) {
+    html += '<button class="btn ' + (i === page ? 'btn-primary' : 'btn-outline-secondary') + ' btn-sm" onclick="' + action + '(' + i + ')">' + i + '</button>';
   }
+  html += '<button class="btn btn-outline-secondary btn-sm" onclick="' + action + '(' + Math.min(pages, page + 1) + ')" ' + (page >= pages ? 'disabled' : '') + '>下一页</button></div>';
+  return html;
+}
+
+function goTeacherActivityPage(page) {
+  teacherActivityPage = page;
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  var dashboard = await api('/teacher/dashboard');
+  var courses = dashboard.courseTrend || [];
+  var activities = dashboard.recentActivities || [];
+  var totalCourses = dashboard.totalCourses || 0;
+  var totalStudents = dashboard.totalStudents || 0;
+  var peerEnabled = dashboard.peerEnabledCount || 0;
+  var activeCourses = dashboard.activeCourses || 0;
   document.getElementById("kpiGrid").innerHTML = [
-    { label: "负责课程", value: courses.length, color: "var(--accent)", tab: "courses" },
+    { label: "负责课程", value: totalCourses, color: "var(--accent)", tab: "courses" },
     { label: "学生总数", value: totalStudents, color: "var(--accent-2)", tab: "students" },
     { label: "已开互评", value: peerEnabled, color: "var(--accent-3)", tab: "peer-review" },
     { label: "有学生课程", value: activeCourses, color: "var(--accent-4)", tab: "analysis" }
   ].map(function(k) { return '<div class="kpi" role="button" tabindex="0" onclick="switchTab(\'' + k.tab + '\')" onkeydown="handleKpiKey(event, \'' + k.tab + '\')" style="border-left:4px solid ' + k.color + '"><div class="value">' + k.value + '</div><div class="label">' + k.label + '</div></div>'; }).join("");
 
-  var chartEl = document.getElementById("chartCourses");
-  var chart = echarts.getInstanceByDom(chartEl) || echarts.init(chartEl);
-  chart.setOption({
-    tooltip: {},
-    grid: { left: 40, right: 16, top: 20, bottom: 24 },
-    xAxis: { type: "category", data: courses.map(function(c) { return c.name; }) },
-    yAxis: { type: "value" },
-    series: [{ type: "bar", data: courses.map(function(c) { return c.enrolledCount || 0; }), itemStyle: { color: "#0f766e", borderRadius: [8,8,0,0] } }]
-  });
+  var activityPages = Math.max(1, Math.ceil(activities.length / teacherActivityPageSize));
+  if (teacherActivityPage > activityPages) teacherActivityPage = activityPages;
+  var activityStart = (teacherActivityPage - 1) * teacherActivityPageSize;
+  var pageActivities = activities.slice(activityStart, activityStart + teacherActivityPageSize);
+  document.getElementById("recentActivityList").innerHTML = activities.length
+    ? '<div class="activity-page-list">' + pageActivities.map(function(item) {
+        return '<div class="activity-item"><div class="activity-title">' + App.escapeHtml(item.title || '平台活动') + '</div><div class="activity-content">' + App.escapeHtml(item.content || '暂无活动内容') + '</div><div class="activity-meta">' + App.timeAgo(item.publishedAt || item.createdAt) + '</div></div>';
+      }).join('') + '</div>' + renderActivityPager(activities.length, teacherActivityPage, 'goTeacherActivityPage')
+    : renderEmptyPanel('暂无近期活动', '管理员发布活动后，会在这里展示最近动态。', true);
 
-  document.getElementById("recentActivityList").innerHTML = courses.length
-    ? courses.slice(0, 5).map(function(c) {
-        return '<div class="d-flex justify-content-between py-2 border-bottom"><span><i class="fa-solid fa-book-open me-2" style="color:var(--accent-2)"></i>' + App.escapeHtml(c.name) + '</span><span class="badge-soft bg-light">' + (c.enrolledCount || 0) + ' 人</span></div>';
-      }).join("")
-    : '<div class="text-center py-3">暂无课程数据</div>';
+  var chartEl = document.getElementById("chartCourses");
+  try {
+    if (!chartEl) return;
+    chartEl.innerHTML = '';
+    var chart = echarts.getInstanceByDom(chartEl) || echarts.init(chartEl);
+    if (courses.length) {
+      chartEl.style.display = 'block';
+      chart.setOption({
+        tooltip: {},
+        grid: { left: 40, right: 16, top: 20, bottom: 24 },
+        xAxis: { type: "category", data: courses.map(function(c) { return c.name || '未命名课程'; }) },
+        yAxis: { type: "value" },
+        series: [{ type: "bar", data: courses.map(function(c) { return c.value || 0; }), itemStyle: { color: "#0f766e", borderRadius: [8,8,0,0] } }]
+      });
+      chart.resize();
+    } else {
+      chart.clear();
+      chartEl.innerHTML = renderEmptyPanel('暂无课程趋势', '创建课程后，这里会展示每门课程的选课人数。', false);
+    }
+  } catch (err) {
+    chartEl.innerHTML = renderEmptyPanel('暂无课程趋势', '当前课程趋势暂时无法渲染，请稍后刷新重试。', false);
+    console.error(err);
+  }
 }
 
 async function loadCourses() {
   var courses = await api("/teacher/courses");
   teacherCourses = courses;
-  var html = '<div class="section-head"><h5 class="mb-0">课程管理</h5><button class="btn btn-primary btn-sm" onclick="openCourseModal()">新建课程</button></div><div class="table-wrap"><table class="table table-hover align-middle"><thead><tr><th>课程</th><th>描述</th><th>时间</th><th>学分</th><th>学生数</th><th>操作</th></tr></thead><tbody>';
+  var html = '<div class="section-head"><h5 class="mb-0">课程管理</h5><button class="btn btn-primary btn-sm" onclick="openCourseModal()">新建课程</button></div>';
+  if (!courses.length) {
+    document.getElementById("courseBox").innerHTML = html + renderEmptyPanel('暂无课程', '先创建课程，再安排学生和作业内容。', false);
+    document.getElementById("assignCourse").innerHTML = '<option value="">暂无课程可选</option>';
+    return;
+  }
+  html += '<div class="table-wrap"><table class="table table-hover align-middle"><thead><tr><th>课程</th><th>描述</th><th>时间</th><th>学分</th><th>学生数</th><th>操作</th></tr></thead><tbody>';
   courses.forEach(function(c) {
-    html += '<tr><td><span class="fw-semibold">' + App.escapeHtml(c.name) + '</span></td><td>' + App.escapeHtml(c.description || "-") + '</td><td>' + App.escapeHtml(c.schedule || "-") + '</td><td>' + (c.credits || "-") + '</td><td>' + (c.enrolledCount || 0) + '/' + (c.maxStudents || 50) + '</td><td><button class="btn btn-outline-primary btn-sm me-1" onclick="openCourseModal(' + c.id + ')"><i class="fa-solid fa-pen"></i> 编辑</button><button class="btn btn-outline-danger btn-sm" onclick="deleteCourse(' + c.id + ')"><i class="fa-solid fa-trash"></i></button></td></tr>';
+    html += '<tr><td><span class="fw-semibold">' + App.escapeHtml(c.name || '未命名课程') + '</span></td><td>' + App.escapeHtml(c.description || '暂无课程描述') + '</td><td>' + App.escapeHtml(c.schedule || '时间待定') + '</td><td>' + (c.credits != null ? c.credits : '未设置') + '</td><td>' + (c.enrolledCount || 0) + '/' + (c.maxStudents || 50) + '</td><td><button class="btn btn-outline-primary btn-sm me-1" onclick="openCourseModal(' + c.id + ')"><i class="fa-solid fa-pen"></i> 编辑</button><button class="btn btn-outline-danger btn-sm" onclick="deleteCourse(' + c.id + ')"><i class="fa-solid fa-trash"></i></button></td></tr>';
   });
   html += '</tbody></table></div>';
   document.getElementById("courseBox").innerHTML = html;
   var sel = document.getElementById("assignCourse");
-  sel.innerHTML = courses.map(function(c) { return '<option value="' + c.id + '">' + App.escapeHtml(c.name) + '</option>'; }).join("");
+  sel.innerHTML = courses.map(function(c) { return '<option value="' + c.id + '">' + App.escapeHtml(c.name || '未命名课程') + '</option>'; }).join('');
 }
 
 function openCourseModal(id) {
@@ -365,20 +428,23 @@ async function deleteCourse(id) {
 
 async function loadStudents() {
   var courses = await api("/teacher/courses");
-  var html = '<div class="section-head"><h5 class="mb-0">学生管理</h5></div>';
+  var html = '<div class="section-head"><h5 class="mb-0">学生管理</h5><span class="metric-muted">按课程查看选课学生</span></div>';
   var hasStudents = false;
   for (var ci = 0; ci < courses.length; ci++) {
     var c = courses[ci];
     var students = await api("/teacher/courses/" + c.id + "/students");
-    if (!students.length) continue;
+    if (!students.length) {
+      html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name || '未命名课程') + '</h6>' + renderEmptyPanel('暂无选课学生', '该课程目前还没有学生加入。', true) + '</div>';
+      continue;
+    }
     hasStudents = true;
-    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name || '-') + '</h6><table class="table table-sm table-hover align-middle"><thead><tr><th>学生姓名</th><th>用户名</th><th>邮箱</th></tr></thead><tbody>';
+    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name || '未命名课程') + '</h6><table class="table table-sm table-hover align-middle"><thead><tr><th>学生姓名</th><th>用户名</th><th>邮箱</th></tr></thead><tbody>';
     students.forEach(function(s) {
-      html += '<tr><td>' + App.escapeHtml(s.displayName || '-') + '</td><td>' + App.escapeHtml(s.username || '-') + '</td><td>' + App.escapeHtml(s.email || '-') + '</td></tr>';
+      html += '<tr><td>' + App.escapeHtml(s.displayName || '未填写姓名') + '</td><td>' + App.escapeHtml(s.username || '-') + '</td><td>' + App.escapeHtml(s.email || '未填写邮箱') + '</td></tr>';
     });
     html += '</tbody></table></div>';
   }
-  document.getElementById("studentBox").innerHTML = hasStudents ? html : '<div class="text-muted text-center py-5">暂无学生数据</div>';
+  document.getElementById("studentBox").innerHTML = courses.length ? html : renderEmptyPanel('暂无课程数据', '创建课程后可在这里查看学生名单。', false);
 }
 
 async function loadAssignments() {
@@ -390,16 +456,19 @@ async function loadAssignments() {
     var c = courses[ci];
     var list = await api("/teacher/courses/" + c.id + "/assignments");
     list.forEach(function(a) { teacherAssignments.push(a); });
-    if (!list.length) continue;
+    if (!list.length) {
+      html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name || '未命名课程') + '</h6>' + renderEmptyPanel('暂无作业', '这门课程还没有发布作业，可直接从上方创建。', true) + '</div>';
+      continue;
+    }
     hasData = true;
-    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name) + '</h6><table class="table table-sm"><thead><tr><th>标题</th><th>截止</th><th>满分</th><th>互评</th><th>提交数</th></tr></thead><tbody>';
+    html += '<div class="table-wrap mb-3"><h6 class="mb-3"><i class="fa-solid fa-book me-2" style="color:var(--accent)"></i>' + App.escapeHtml(c.name || '未命名课程') + '</h6><table class="table table-sm"><thead><tr><th>标题</th><th>截止</th><th>满分</th><th>互评</th><th>提交数</th></tr></thead><tbody>';
     list.forEach(function(a) {
       var status = a.peerReviewEnabled ? '<span class="badge-soft bg-info bg-opacity-10 text-info">已开启</span>' : '<span class="badge-soft bg-secondary bg-opacity-10 text-secondary">未开启</span>';
-      html += '<tr><td>' + App.escapeHtml(a.title) + '</td><td>' + App.fmtTime(a.dueDate) + '</td><td>' + (a.totalPoints || 100) + '</td><td>' + status + '</td><td>' + (a.submissionCount || 0) + '</td></tr>';
+      html += '<tr><td>' + App.escapeHtml(a.title || '未命名作业') + '</td><td>' + (App.fmtTime(a.dueDate) || '无截止时间') + '</td><td>' + (a.totalPoints || 100) + '</td><td>' + status + '</td><td>' + (a.submissionCount || 0) + '</td></tr>';
     });
     html += '</tbody></table></div>';
   }
-  document.getElementById("assignmentBox").innerHTML = hasData ? html : '<div class="text-muted text-center py-5">暂无作业，点击上方发布</div>';
+  document.getElementById("assignmentBox").innerHTML = courses.length ? html : renderEmptyPanel('暂无课程可发布作业', '请先创建课程，再为课程发布作业。', false);
 }
 
 async function publishAssignment() {
@@ -471,7 +540,7 @@ async function savePeerConfig() {
 async function loadGrading() {
   var courses = await api("/teacher/courses");
   gradingSubmissionMeta = {};
-  var html = '<div class="section-head"><h5 class="mb-0">评分任务</h5></div>';
+  var html = '<div class="section-head"><h5 class="mb-0">评分任务</h5><span class="metric-muted">集中查看学生提交与附件</span></div>';
   var hasGrading = false;
   for (var ci = 0; ci < courses.length; ci++) {
     var c = courses[ci];
@@ -481,32 +550,41 @@ async function loadGrading() {
       var subs = await api("/teacher/assignments/" + a.id + "/submissions");
       if (!subs.length) continue;
       hasGrading = true;
-      html += '<div class="table-wrap mb-3"><h6 class="mb-2"><i class="fa-solid fa-file me-2" style="color:var(--accent-2)"></i>' + App.escapeHtml(c.name) + ' / ' + App.escapeHtml(a.title) + '</h6><table class="table table-sm"><thead><tr><th>学生</th><th>提交内容</th><th>状态</th><th>分数</th><th></th></tr></thead><tbody>';
+      html += '<div class="table-wrap mb-3"><h6 class="mb-2"><i class="fa-solid fa-file me-2" style="color:var(--accent-2)"></i>' + App.escapeHtml(c.name || '未命名课程') + ' / ' + App.escapeHtml(a.title || '未命名作业') + '</h6><table class="table table-sm"><thead><tr><th>学生</th><th>提交内容</th><th>状态</th><th>分数</th><th></th></tr></thead><tbody>';
       subs.forEach(function(s) {
-        var submittedContent = s.content ? App.escapeHtml(s.content) : '-';
-        if (s.filePaths) submittedContent += '<div class="small text-muted mt-1">附件：' + App.escapeHtml(s.filePaths) + '</div>';
+        var submittedContent = s.content ? App.escapeHtml(s.content) : '仅附件提交';
+        var attachments = App.parseStoredFiles(s.filePaths);
+        if (attachments.length) {
+          submittedContent += '<div class="small text-muted mt-1 d-flex flex-column gap-1">' + attachments.map(function(file) {
+            var safeName = App.escapeHtml(file.name || '附件');
+            var safePathAttr = App.escapeAttr(file.path || '');
+            var safeNameAttr = App.escapeAttr(file.name || '附件');
+            return '<div><i class="fa-solid fa-paperclip me-1"></i>' + safeName + ' <a href="javascript:;" data-path="' + safePathAttr + '" onclick="previewStoredFile(this.dataset.path)" class="text-decoration-none ms-1">预览</a> <a href="javascript:;" data-path="' + safePathAttr + '" data-name="' + safeNameAttr + '" onclick="downloadStoredFile(this.dataset.path, this.dataset.name)" class="text-decoration-none ms-1">下载</a></div>';
+          }).join('') + '</div>';
+        }
         var studentName = s.student ? (s.student.displayName || s.student.username) : '-';
         gradingSubmissionMeta[s.id] = {
           studentName: studentName,
           teacherComment: s.teacherComment || '',
           score: s.score
         };
-        html += '<tr><td>' + App.escapeHtml(studentName) + '</td><td>' + submittedContent + '</td><td>' + (s.status === 'SUBMITTED' ? '<span class="badge-soft bg-warning bg-opacity-10 text-warning">待评分</span>' : s.status === 'GRADED' ? '<span class="badge-soft bg-success bg-opacity-10 text-success">已评分</span>' : App.escapeHtml(s.status)) + '</td><td><span class="fw-semibold">' + (s.score != null ? s.score : '-') + '</span></td><td><button class="btn btn-outline-primary btn-sm" onclick="openGradeModal(' + s.id + ')"><i class="fa-solid fa-pen"></i> 评分</button></td></tr>';
+        html += '<tr><td>' + App.escapeHtml(studentName) + '</td><td>' + submittedContent + '</td><td>' + (s.status === 'SUBMITTED' ? '<span class="badge-soft bg-warning bg-opacity-10 text-warning">待评分</span>' : s.status === 'GRADED' ? '<span class="badge-soft bg-success bg-opacity-10 text-success">已评分</span>' : App.escapeHtml(s.status || '待处理')) + '</td><td><span class="fw-semibold">' + (s.score != null ? s.score : '-') + '</span></td><td><button class="btn btn-outline-primary btn-sm" onclick="openGradeModal(' + s.id + ')"><i class="fa-solid fa-pen"></i> 评分</button></td></tr>';
       });
       html += '</tbody></table></div>';
     }
   }
-  document.getElementById("gradingBox").innerHTML = hasGrading ? html : '<div class="text-muted text-center py-5">暂无待评分作业</div>';
+  document.getElementById("gradingBox").innerHTML = hasGrading ? html : renderEmptyPanel('暂无待评分作业', '学生提交后，会在这里集中展示评分任务。', false);
 }
 
 async function loadQuickComments(category) {
-  if (category === undefined) category = quickCommentCategory;
-  quickCommentCategory = category || null;
+  if (category !== undefined) {
+    quickCommentCategory = category && category !== 'all' ? category : 'all';
+  }
   document.querySelectorAll('#gradeModal .btn-group .btn').forEach(function(btn) {
-    var btnCategory = btn.dataset.category || '';
-    btn.classList.toggle('active', btnCategory === (quickCommentCategory || ''));
+    var btnCategory = btn.dataset.category || 'all';
+    btn.classList.toggle('active', btnCategory === quickCommentCategory);
   });
-  var query = quickCommentCategory ? ('?category=' + encodeURIComponent(quickCommentCategory)) : '';
+  var query = quickCommentCategory !== 'all' ? ('?category=' + encodeURIComponent(quickCommentCategory)) : '';
   var list = await api('/teacher/comment-memories' + query);
   var box = document.getElementById('quickCommentBox');
   if (!list.length) {
@@ -543,8 +621,8 @@ async function openGradeModal(id) {
   gradeComment.value = meta.teacherComment || '';
   gradeScore.value = meta.score == null ? '' : meta.score;
   gradeQuickCommentId.value = '';
-  quickCommentCategory = null;
-  await loadQuickComments(null);
+  quickCommentCategory = 'all';
+  await loadQuickComments('all');
   currentGradeRow = new bootstrap.Modal(gradeModal);
   currentGradeRow.show();
 }
@@ -569,7 +647,7 @@ async function submitGrade() {
 
 async function loadAnalysis() {
   var courses = await api("/teacher/courses");
-  var html = '<div class="section-head"><h5 class="mb-0">作业分析</h5></div>';
+  var html = '<div class="section-head"><h5 class="mb-0">作业分析</h5><span class="metric-muted">展示成绩分布与及格率</span></div>';
   var charts = [];
   for (var ci = 0; ci < courses.length; ci++) {
     var c = courses[ci];
@@ -580,10 +658,10 @@ async function loadAnalysis() {
       if (!d || !d.distribution || !d.distribution.length) continue;
       var aid = 'ana-' + a.id;
       charts.push({ id: aid, data: d });
-      html += '<div class="section-surface mb-3 analysis-card"><div class="d-flex justify-content-between align-items-start gap-2 mb-2"><h6 class="mb-0"><i class="fa-solid fa-chart-bar me-2" style="color:var(--accent)"></i>' + App.escapeHtml(a.title) + '</h6><span class="badge-soft bg-primary bg-opacity-10 text-primary">平均分 ' + (d.average != null ? Number(d.average).toFixed(1) : '-') + '</span></div><div class="metric-row mb-2"><span>提交 ' + (d.total || 0) + '</span><span>最高 ' + (d.max != null ? d.max : '-') + '</span><span>及格率 ' + (d.passRate != null ? d.passRate : 0) + '%</span></div><div id="' + aid + '" style="height:260px"></div></div>';
+      html += '<div class="section-surface mb-3 analysis-card"><div class="d-flex justify-content-between align-items-start gap-2 mb-2"><h6 class="mb-0"><i class="fa-solid fa-chart-bar me-2" style="color:var(--accent)"></i>' + App.escapeHtml(a.title || '未命名作业') + '</h6><span class="badge-soft bg-primary bg-opacity-10 text-primary">平均分 ' + (d.average != null ? Number(d.average).toFixed(1) : '-') + '</span></div><div class="metric-row mb-2"><span>提交 ' + (d.total || 0) + '</span><span>最高 ' + (d.max != null ? d.max : '-') + '</span><span>及格率 ' + (d.passRate != null ? d.passRate : 0) + '%</span></div><div id="' + aid + '" style="height:260px"></div></div>';
     }
   }
-  document.getElementById("analysisBox").innerHTML = charts.length ? html : '<div class="text-muted text-center py-5 empty-state">暂无分析数据</div>';
+  document.getElementById("analysisBox").innerHTML = charts.length ? html : html + renderEmptyPanel('暂无分析数据', '学生提交并评分后，这里会展示成绩分布与趋势。', false);
   charts.forEach(function(item) {
     var el = document.getElementById(item.id);
     if (!el) return;

@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 通知仓库。
@@ -21,4 +22,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     /** 统计某用户未读数量 */
     long countByRecipientAndReadFalse(String recipient);
+
+    List<Notification> findTop5ByRecipientAndCategoryOrderByCreatedAtDesc(String recipient, String category);
+
+    Optional<Notification> findTopByRecipientAndCategoryOrderByCreatedAtDesc(String recipient, String category);
 }

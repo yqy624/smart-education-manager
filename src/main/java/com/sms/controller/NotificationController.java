@@ -1,6 +1,7 @@
 package com.sms.controller;
 
 import com.sms.dto.ApiResponse;
+import com.sms.service.AdminService;
 import com.sms.service.NotificationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -22,11 +23,19 @@ import java.util.Map;
 public class NotificationController {
 
     private final NotificationService notificationService;
+    private final AdminService adminService;
 
     @Operation(summary = "查看我的通知", description = "返回当前登录用户的全部通知列表。")
     @GetMapping
     public ApiResponse<?> myNotifications(@Parameter(hidden = true) Authentication auth) {
         return ApiResponse.ok(notificationService.getMyNotifications(auth.getName()));
+    }
+
+    @Operation(summary = "查看首页活动", description = "返回当前登录用户可见的最新管理员发布活动。")
+    @GetMapping("/published-activities")
+    public ApiResponse<?> publishedActivities(@Parameter(hidden = true) Authentication auth,
+                                              @Parameter(description = "返回数量") @RequestParam(defaultValue = "5") int limit) {
+        return ApiResponse.ok(adminService.getPublishedActivitiesForUser(auth.getName(), limit));
     }
 
     @Operation(summary = "查看未读通知数", description = "返回当前登录用户的未读通知数量。")

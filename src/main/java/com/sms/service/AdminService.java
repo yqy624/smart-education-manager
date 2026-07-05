@@ -1,23 +1,27 @@
 package com.sms.service;
 
 import com.sms.dto.admin.AdminAuditActor;
+import com.sms.dto.admin.AdminActivityRequest;
 import com.sms.dto.admin.AdminCourseEnrollmentAdjustRequest;
 import com.sms.dto.admin.AdminCourseUpdateRequest;
 import com.sms.model.AuditLog;
 import com.sms.model.Course;
 import com.sms.model.Enrollment;
+import com.sms.model.PublishedActivity;
+import com.sms.model.PublishedActivityAudience;
+import com.sms.model.PublishedActivityStatus;
 import com.sms.model.RoleType;
 import com.sms.model.User;
 import com.sms.repository.AuditLogRepository;
 import com.sms.repository.CourseRepository;
 import com.sms.repository.EnrollmentRepository;
+import com.sms.repository.PublishedActivityRepository;
 import com.sms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -45,6 +49,8 @@ public class AdminService {
     private final EnrollmentRepository enrollmentRepository;
     private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
+    private final NotificationService notificationService;
+    private final PublishedActivityRepository publishedActivityRepository;
 
     public List<User> getAllUsers() {
         return userRepository.findAll();
@@ -119,8 +125,9 @@ public class AdminService {
         stats.put("pendingAppeals", pendingAppeals);
         stats.put("storageWarningLow", storageLow);
         stats.put("storageFreePercent", round1(storageFreePercent));
-        stats.put("recentVisits", buildRecentVisits(totalUsers, totalEnrollments));
+        stats.put("recentVisits", buildRecentActiveUsers());
         stats.put("roleDistribution", List.of(chartItem("学生", totalStudents), chartItem("教师", totalTeachers), chartItem("管理员", totalAdmins)));
+        stats.put("activities", listActivities());
         stats.put("topCourses", courseRepository.findAll().stream().sorted(Comparator.comparingInt(Course::getEnrolledCount).reversed()).limit(5).map(course -> {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("courseId", course.getId());
@@ -251,6 +258,64 @@ public class AdminService {
         return result;
     }
 
+    @Transactional
+    public void createActivity(AdminActivityRequest request, AdminAuditActor actor) {
+        PublishedActivity activity = buildActivity(null, request, actor);
+        activity.setStatus(PublishedActivityStatus.PUBLISHED);
+        activity.setPublishedAt(LocalDateTime.now());
+        PublishedActivity saved = publishedActivityRepository.save(activity);
+        deliverActivity(saved);
+        logAudit(actor, "管理员发布活动", "活动ID=" + saved.getId() + "，标题=" + saved.getTitle());
+    }
+
+    @Transactional
+    public void updateActivity(Long id, AdminActivityRequest request, AdminAuditActor actor) {
+        PublishedActivity existing = getActivity(id);
+        PublishedActivity updated = buildActivity(existing, request, actor);
+        publishedActivityRepository.save(updated);
+        logAudit(actor, "管理员编辑活动", "活动ID=" + updated.getId() + "，标题=" + updated.getTitle());
+    }
+
+    @Transactional
+    public void deleteActivity(Long id, AdminAuditActor actor) {
+        PublishedActivity activity = getActivity(id);
+        publishedActivityRepository.delete(activity);
+        logAudit(actor, "管理员删除活动", "活动ID=" + id + "，标题=" + activity.getTitle());
+    }
+
+    @Transactional
+    public void republishActivity(Long id, AdminAuditActor actor) {
+        PublishedActivity activity = getActivity(id);
+        activity.setStatus(PublishedActivityStatus.PUBLISHED);
+        activity.setPublishedAt(LocalDateTime.now());
+        activity.setPublishVersion((activity.getPublishVersion() == null ? 0 : activity.getPublishVersion()) + 1);
+        activity.setUpdatedBy(actor.getUsername());
+        publishedActivityRepository.save(activity);
+        deliverActivity(activity);
+        logAudit(actor, "管理员重新发布活动", "活动ID=" + activity.getId() + "，标题=" + activity.getTitle());
+    }
+
+    public List<PublishedActivity> listActivities() {
+        return publishedActivityRepository.findTop8ByOrderByUpdatedAtDesc();
+    }
+
+    public List<PublishedActivity> getPublishedActivitiesForUser(String username, int limit) {
+        User user = userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("用户不存在"));
+        if (user.getRole() == RoleType.ADMIN) {
+            return publishedActivityRepository.findTop8ByOrderByUpdatedAtDesc().stream()
+                .filter(activity -> activity.getStatus() == PublishedActivityStatus.PUBLISHED)
+                .limit(Math.max(1, limit))
+                .toList();
+        }
+        List<PublishedActivity> candidates = publishedActivityRepository.findTop8ByOrderByUpdatedAtDesc().stream()
+            .filter(activity -> activity.getStatus() == PublishedActivityStatus.PUBLISHED)
+            .filter(activity -> activity.getAudience() == PublishedActivityAudience.ALL
+                || (user.getRole() == RoleType.TEACHER && activity.getAudience() == PublishedActivityAudience.TEACHERS)
+                || (user.getRole() == RoleType.STUDENT && activity.getAudience() == PublishedActivityAudience.STUDENTS))
+            .toList();
+        return candidates.stream().limit(Math.max(1, limit)).toList();
+    }
+
     public Map<String, Object> getCourseEnrollmentDetails(Long courseId) {
         Course course = getCourse(courseId);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -328,6 +393,55 @@ public class AdminService {
         return (keyword == null || keyword.isBlank()) ? null : keyword.trim();
     }
 
+    private PublishedActivity getActivity(Long id) {
+        return publishedActivityRepository.findById(id).orElseThrow(() -> new RuntimeException("活动不存在"));
+    }
+
+    private PublishedActivity buildActivity(PublishedActivity existing, AdminActivityRequest request, AdminAuditActor actor) {
+        String title = request.getTitle() == null ? "" : request.getTitle().trim();
+        String content = request.getContent() == null ? "" : request.getContent().trim();
+        String link = request.getLink() == null ? null : request.getLink().trim();
+        if (title.isBlank()) {
+            throw new RuntimeException("活动标题不能为空");
+        }
+        if (content.isBlank()) {
+            throw new RuntimeException("活动内容不能为空");
+        }
+        PublishedActivityAudience audience = parseAudience(request.getAudience());
+        PublishedActivity activity = existing == null ? PublishedActivity.builder().build() : existing;
+        activity.setTitle(title);
+        activity.setContent(content);
+        activity.setAudience(audience);
+        activity.setLink(link == null || link.isBlank() ? null : link);
+        activity.setUpdatedBy(actor.getUsername());
+        if (existing == null) {
+            activity.setCreatedBy(actor.getUsername());
+            activity.setPublishVersion(1);
+        }
+        return activity;
+    }
+
+    private PublishedActivityAudience parseAudience(String audience) {
+        if (audience == null || audience.isBlank()) {
+            return PublishedActivityAudience.ALL;
+        }
+        return PublishedActivityAudience.valueOf(audience.trim().toUpperCase(Locale.ROOT));
+    }
+
+    private void deliverActivity(PublishedActivity activity) {
+        List<String> recipients = switch (activity.getAudience()) {
+            case STUDENTS -> userRepository.findByRole(RoleType.STUDENT).stream().map(User::getUsername).toList();
+            case TEACHERS -> userRepository.findByRole(RoleType.TEACHER).stream().map(User::getUsername).toList();
+            default -> userRepository.findAll().stream()
+                .filter(user -> user.getRole() == RoleType.STUDENT || user.getRole() == RoleType.TEACHER)
+                .map(User::getUsername)
+                .toList();
+        };
+        if (!recipients.isEmpty()) {
+            notificationService.notifyAll(recipients, "ACTIVITY", activity.getTitle(), activity.getContent(), activity.getLink());
+        }
+    }
+
     private Course getCourse(Long courseId) {
         return courseRepository.findById(courseId).orElseThrow(() -> new RuntimeException("课程不存在"));
     }
@@ -364,6 +478,22 @@ public class AdminService {
         return ((double) runtime.freeMemory() / runtime.maxMemory()) * 100;
     }
 
+    private List<Map<String, Object>> buildRecentActiveUsers() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        LocalDate today = LocalDate.now();
+        for (int i = 6; i >= 0; i--) {
+            LocalDate day = today.minusDays(i);
+            LocalDateTime start = day.atStartOfDay();
+            LocalDateTime end = day.plusDays(1).atStartOfDay();
+            long count = safeCountByLastLogin(start) - safeCountByLastLogin(end);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("date", day.format(DateTimeFormatter.ofPattern("M/d")));
+            item.put("value", Math.max(0, count));
+            result.add(item);
+        }
+        return result;
+    }
+
     private long safeCountByLastLogin(LocalDateTime time) {
         try {
             return userRepository.countByLastLoginAfter(time);
@@ -386,19 +516,6 @@ public class AdminService {
         } catch (Exception e) {
             return Math.max(0, courseRepository.count() / 10);
         }
-    }
-
-    private List<Map<String, Object>> buildRecentVisits(long totalUsers, long totalEnrollments) {
-        List<Map<String, Object>> visits = new ArrayList<>();
-        for (int i = 6; i >= 0; i--) {
-            LocalDate day = LocalDate.now().minusDays(i);
-            int value = (int) (Math.max(18, totalUsers / 2) + (6 - i) * 7 + (totalEnrollments % 13));
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("date", day.format(DateTimeFormatter.ofPattern("MM-dd")));
-            item.put("value", value);
-            visits.add(item);
-        }
-        return visits;
     }
 
     private List<Map<String, Object>> buildMonitorTrend(List<String> names, int points, int min, int max) {

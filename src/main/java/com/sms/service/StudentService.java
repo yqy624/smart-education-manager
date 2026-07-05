@@ -1,5 +1,6 @@
 package com.sms.service;
 
+import com.sms.dto.ActivitySummary;
 import com.sms.model.*;
 import com.sms.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +10,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -28,6 +28,41 @@ public class StudentService {
     private final SubmissionRepository submissionRepository;
     private final PeerReviewRepository peerReviewRepository;
     private final NotificationService notificationService;
+    private final FileStorageService fileStorageService;
+    private final PublishedActivityRepository publishedActivityRepository;
+
+    public Map<String, Object> getDashboard(User student) {
+        List<Course> myCourses = getMyCourses(student);
+        List<Map<String, Object>> grades = getMyGrades(student);
+        List<Map<String, Object>> peerReviews = getMyPeerReviews(student);
+        List<Map<String, Object>> scored = grades.stream().filter(item -> item.get("score") != null).toList();
+        int pendingCount = (int) grades.stream().filter(item -> {
+            Object status = item.get("status");
+            return "PENDING".equals(status) || "SUBMITTED".equals(status);
+        }).count();
+        double peerReviewBonus = peerReviews.stream().mapToDouble(item -> Number.class.isInstance(item.get("bonusEarned")) ? ((Number) item.get("bonusEarned")).doubleValue() : 0.0).max().orElse(0.0);
+        List<Map<String, Object>> scoreTrend = scored.stream().map(item -> {
+            Map<String, Object> trend = new LinkedHashMap<>();
+            trend.put("name", item.get("assignmentTitle"));
+            trend.put("value", item.get("score"));
+            return trend;
+        }).toList();
+        List<Map<String, Object>> recentGrades = scored.stream().limit(6).toList();
+        List<ActivitySummary> recentActivities = publishedActivityRepository.findTop5ByStatusOrderByPublishedAtDesc(PublishedActivityStatus.PUBLISHED).stream()
+            .filter(activity -> activity.getAudience() == PublishedActivityAudience.ALL || activity.getAudience() == PublishedActivityAudience.STUDENTS)
+            .limit(5)
+            .map(activity -> new ActivitySummary(activity.getId(), activity.getTitle(), activity.getContent(), activity.getAudience().name(), activity.getLink(), activity.getStatus().name(), activity.getPublishedAt(), activity.getCreatedAt()))
+            .toList();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("selectedCourseCount", myCourses.size());
+        result.put("gradedCount", scored.size());
+        result.put("peerReviewBonus", peerReviewBonus);
+        result.put("pendingCount", pendingCount);
+        result.put("scoreTrend", scoreTrend);
+        result.put("recentGrades", recentGrades);
+        result.put("recentActivities", recentActivities);
+        return result;
+    }
 
     @Cacheable(cacheNames = "visibleCourses", key = "'all'")
     public List<Course> getAllCourses() {
@@ -74,6 +109,9 @@ public class StudentService {
 
     public List<Assignment> getMyAssignments(Long courseId, User student) {
         Course course = courseRepository.findById(courseId).orElseThrow(() -> new RuntimeException("课程不存在"));
+        if (!enrollmentRepository.existsByStudentAndCourse(student, course)) {
+            throw new RuntimeException("未选该课程");
+        }
         return assignmentRepository.findByCourse(course);
     }
 
@@ -85,6 +123,9 @@ public class StudentService {
     @Transactional
     public Submission submitAssignment(Long assignmentId, User student, String content, String filePaths) {
         Assignment assignment = assignmentRepository.findById(assignmentId).orElseThrow(() -> new RuntimeException("作业不存在"));
+        if (!enrollmentRepository.existsByStudentAndCourse(student, assignment.getCourse())) {
+            throw new RuntimeException("未选该课程，不能提交作业");
+        }
         Submission existing = submissionRepository.findByAssignmentAndStudent(assignment, student).orElse(null);
         if (existing == null) {
             existing = Submission.builder().assignment(assignment).student(student).build();
@@ -93,7 +134,9 @@ public class StudentService {
         existing.setFilePaths(filePaths);
         existing.setStatus(AssignmentStatus.SUBMITTED);
         existing.setSubmittedAt(LocalDateTime.now());
-        return submissionRepository.save(existing);
+        Submission saved = submissionRepository.save(existing);
+        bindSubmissionFiles(saved);
+        return saved;
     }
 
     public List<Map<String, Object>> getMyGrades(User student) {
@@ -223,6 +266,24 @@ public class StudentService {
             .mapToDouble(Enrollment::getScore)
             .average()
             .orElse(-1);
+    }
+
+    private void bindSubmissionFiles(Submission submission) {
+        if (submission.getFilePaths() == null || submission.getFilePaths().isBlank()) {
+            return;
+        }
+        String[] parts = submission.getFilePaths().split("::", 2);
+        String storagePath = parts[0];
+        if (parts.length > 1 && !parts[1].isBlank()) {
+            submission.setFileName(parts[1]);
+        }
+        fileStorageService.bindStoredFile(
+            storagePath,
+            StoredFileCategory.SUBMISSION_ATTACHMENT,
+            submission.getAssignment().getCourse().getId(),
+            submission.getAssignment().getId(),
+            submission.getId()
+        );
     }
 
     private Map<String, Object> buildPeerReviewGroup(Course course, Assignment assignment, User student, LocalDateTime now) {

@@ -76,9 +76,9 @@ docker compose down -v
 说明：
 
 - 首次启动时会先初始化 MySQL，应用会在数据库健康检查通过后再启动。
-- Docker Compose 会同时启动 MySQL 和 Redis，应用通过容器网络连接它们。
+- Docker Compose 会同时启动 MySQL、Redis 和 MinIO，应用通过容器网络连接它们。
 - `docker compose down -v` 会同时清空本地数据库卷数据。
-- Compose 默认只暴露应用的 `8080` 端口，MySQL 和 Redis 仅在容器网络内供应用访问。
+- Compose 默认只暴露应用的 `8080` 端口，MySQL、Redis 和 MinIO 仅在容器网络内供应用访问。
 
 ## 关键配置
 
@@ -96,6 +96,13 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
+
+storage:
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:minioadmin}
+    secret-key: ${MINIO_SECRET_KEY:minioadmin}
+    bucket: ${MINIO_BUCKET:education-files}
 
 jwt:
   secret: ${JWT_SECRET:ChangeThisJwtSecretBeforeProductionUse_AtLeast32CharsLong}

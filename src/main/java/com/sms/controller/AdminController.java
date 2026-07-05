@@ -5,6 +5,7 @@ import com.sms.dto.PageResponse;
 import com.sms.dto.UserCreateRequest;
 import com.sms.dto.admin.AdminAuditActor;
 import com.sms.dto.admin.AdminBatchCourseActionRequest;
+import com.sms.dto.admin.AdminActivityRequest;
 import com.sms.dto.admin.AdminCourseEnrollmentAdjustRequest;
 import com.sms.dto.admin.AdminCourseUpdateRequest;
 import com.sms.model.User;
@@ -131,6 +132,49 @@ public class AdminController {
     @GetMapping("/dashboard")
     public ApiResponse<?> dashboard() {
         return ApiResponse.ok(adminService.getDashboardStats());
+    }
+
+    @Operation(summary = "查看活动列表", description = "返回管理员活动面板中的最新活动列表。")
+    @GetMapping("/activities")
+    public ApiResponse<?> activities() {
+        return ApiResponse.ok(adminService.listActivities());
+    }
+
+    @Operation(summary = "新建活动", description = "创建并发布一条首页活动。")
+    @PostMapping("/activities")
+    public ApiResponse<?> createActivity(@RequestBody AdminActivityRequest request,
+                                         @Parameter(hidden = true) Authentication authentication,
+                                         @Parameter(hidden = true) HttpServletRequest httpRequest) {
+        adminService.createActivity(request, buildActor(authentication, httpRequest));
+        return ApiResponse.ok("活动已发布");
+    }
+
+    @Operation(summary = "编辑活动", description = "修改已存在的活动内容。")
+    @PutMapping("/activities/{id}")
+    public ApiResponse<?> updateActivity(@PathVariable Long id,
+                                         @RequestBody AdminActivityRequest request,
+                                         @Parameter(hidden = true) Authentication authentication,
+                                         @Parameter(hidden = true) HttpServletRequest httpRequest) {
+        adminService.updateActivity(id, request, buildActor(authentication, httpRequest));
+        return ApiResponse.ok("活动已更新");
+    }
+
+    @Operation(summary = "删除活动", description = "删除指定活动。")
+    @DeleteMapping("/activities/{id}")
+    public ApiResponse<?> deleteActivity(@PathVariable Long id,
+                                         @Parameter(hidden = true) Authentication authentication,
+                                         @Parameter(hidden = true) HttpServletRequest httpRequest) {
+        adminService.deleteActivity(id, buildActor(authentication, httpRequest));
+        return ApiResponse.ok("活动已删除");
+    }
+
+    @Operation(summary = "重新发布活动", description = "将活动重新推送给目标受众。")
+    @PostMapping("/activities/{id}/republish")
+    public ApiResponse<?> republishActivity(@PathVariable Long id,
+                                            @Parameter(hidden = true) Authentication authentication,
+                                            @Parameter(hidden = true) HttpServletRequest httpRequest) {
+        adminService.republishActivity(id, buildActor(authentication, httpRequest));
+        return ApiResponse.ok("活动已重新发布");
     }
 
     @Operation(summary = "查看系统监控信息", description = "返回系统运行状态和基础监控数据。")

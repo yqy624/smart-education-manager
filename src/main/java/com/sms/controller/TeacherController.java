@@ -43,6 +43,12 @@ public class TeacherController {
             .orElseThrow(() -> new RuntimeException("用户不存在"));
     }
 
+    @Operation(summary = "查看教师首页数据", description = "返回教师首页的 KPI、选课趋势和近期活动。")
+    @GetMapping("/dashboard")
+    public ApiResponse<?> dashboard(@Parameter(hidden = true) Authentication auth) {
+        return ApiResponse.ok(teacherService.getDashboard(getCurrentUser(auth)));
+    }
+
     @Operation(summary = "查看我的课程", description = "返回当前教师负责的课程列表。")
     @GetMapping("/courses")
     public ApiResponse<?> myCourses(@Parameter(hidden = true) Authentication auth) {

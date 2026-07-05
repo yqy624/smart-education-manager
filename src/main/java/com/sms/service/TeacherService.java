@@ -1,5 +1,6 @@
 package com.sms.service;
 
+import com.sms.dto.ActivitySummary;
 import com.sms.dto.GradeSubmissionRequest;
 import com.sms.model.*;
 import com.sms.repository.*;
@@ -25,6 +26,37 @@ public class TeacherService {
     private final PeerReviewRepository peerReviewRepository;
     private final NotificationService notificationService;
     private final TeacherCommentMemoryService teacherCommentMemoryService;
+    private final FileStorageService fileStorageService;
+    private final PublishedActivityRepository publishedActivityRepository;
+
+    public Map<String, Object> getDashboard(User teacher) {
+        List<Course> courses = getMyCourses(teacher);
+        int totalStudents = courses.stream().mapToInt(course -> course.getEnrolledCount()).sum();
+        long peerEnabledCount = courses.stream()
+            .flatMap(course -> assignmentRepository.findByCourse(course).stream())
+            .filter(Assignment::isPeerReviewEnabled)
+            .count();
+        long activeCourses = courses.stream().filter(course -> course.getEnrolledCount() > 0).count();
+        List<Map<String, Object>> courseTrend = courses.stream().map(course -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("name", course.getName());
+            item.put("value", course.getEnrolledCount());
+            return item;
+        }).toList();
+        List<ActivitySummary> recentActivities = publishedActivityRepository.findTop5ByStatusOrderByPublishedAtDesc(PublishedActivityStatus.PUBLISHED).stream()
+            .filter(activity -> activity.getAudience() == PublishedActivityAudience.ALL || activity.getAudience() == PublishedActivityAudience.TEACHERS)
+            .limit(5)
+            .map(activity -> new ActivitySummary(activity.getId(), activity.getTitle(), activity.getContent(), activity.getAudience().name(), activity.getLink(), activity.getStatus().name(), activity.getPublishedAt(), activity.getCreatedAt()))
+            .toList();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("totalCourses", courses.size());
+        result.put("totalStudents", totalStudents);
+        result.put("peerEnabledCount", peerEnabledCount);
+        result.put("activeCourses", activeCourses);
+        result.put("courseTrend", courseTrend);
+        result.put("recentActivities", recentActivities);
+        return result;
+    }
 
     public List<Course> getMyCourses(User teacher) {
         return courseRepository.findByTeacher(teacher);
@@ -76,8 +108,12 @@ public class TeacherService {
         }
         Course course = courseRepository.findById(assignment.getCourse().getId())
             .orElseThrow(() -> new RuntimeException("课程不存在"));
+        if (teacher.getRole() != RoleType.ADMIN && (course.getTeacher() == null || !course.getTeacher().getId().equals(teacher.getId()))) {
+            throw new RuntimeException("无权在该课程下发布作业");
+        }
         assignment.setCourse(course);
         Assignment saved = assignmentRepository.save(assignment);
+        bindAssignmentFiles(saved);
 
         List<String> students = enrollmentRepository.findByCourse(course).stream()
             .map(e -> e.getStudent().getUsername())
@@ -235,6 +271,27 @@ public class TeacherService {
         result.put("grantedCount", reviews.stream().filter(r -> r.getStatus() == PeerReviewStatus.BONUS_GRANTED).count());
         result.put("reviews", items);
         return result;
+    }
+
+    private void bindAssignmentFiles(Assignment assignment) {
+        if (assignment.getAttachmentPaths() == null || assignment.getAttachmentPaths().isBlank()) {
+            return;
+        }
+        String[] entries = assignment.getAttachmentPaths().split(",");
+        for (String entry : entries) {
+            String item = entry == null ? "" : entry.trim();
+            if (item.isBlank()) {
+                continue;
+            }
+            String storagePath = item.split("::", 2)[0];
+            fileStorageService.bindStoredFile(
+                storagePath,
+                StoredFileCategory.ASSIGNMENT_ATTACHMENT,
+                assignment.getCourse().getId(),
+                assignment.getId(),
+                null
+            );
+        }
     }
 
     private LocalDateTime parseDateTime(Object value) {

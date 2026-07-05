@@ -222,6 +222,28 @@ window.App = (function () {
     renderNotifications();
   }
 
+  function parseStoredFiles(value) {
+    if (!value) return [];
+    return String(value).split(',').map(function(item) {
+      var raw = String(item || '').trim();
+      if (!raw) return null;
+      var parts = raw.split('::');
+      return {
+        path: parts[0],
+        name: parts[1] || '附件'
+      };
+    }).filter(Boolean);
+  }
+
+  async function previewFile(path) {
+    var res = await fetch('/api/files/preview?path=' + encodeURIComponent(path), { headers: { Authorization: 'Bearer ' + window.TOKEN } });
+    if (!res.ok) throw new Error('预览失败');
+    var blob = await res.blob();
+    var url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener');
+    setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+  }
+
   async function downloadFile(url, filename) {
     var res = await fetch("/api" + url, { headers: { Authorization: "Bearer " + window.TOKEN } });
     if (!res.ok) throw new Error("下载失败");
@@ -272,6 +294,8 @@ window.App = (function () {
     hideNotifPanel: hideNotifPanel,
     readNotif: readNotif,
     markAllRead: markAllRead,
+    parseStoredFiles: parseStoredFiles,
+    previewFile: previewFile,
     downloadFile: downloadFile,
     logout: logout,
     showToast: showToast,

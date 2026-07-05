@@ -25,6 +25,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class NotificationService {
 
+    public static final String CATEGORY_PUBLISHED_ACTIVITY = "PUBLISHED_ACTIVITY";
     private static final String UNREAD_COUNT_CACHE = "notificationUnreadCount";
 
     private final NotificationRepository notificationRepository;
@@ -67,6 +68,32 @@ public class NotificationService {
 
     public List<Notification> getMyNotifications(String username) {
         return notificationRepository.findByRecipientOrderByCreatedAtDesc(username);
+    }
+
+    public List<Notification> getPublishedActivities(String username, int limit) {
+        if (limit <= 1) {
+            return notificationRepository.findTopByRecipientAndCategoryOrderByCreatedAtDesc(username, CATEGORY_PUBLISHED_ACTIVITY)
+                .map(List::of)
+                .orElse(List.of());
+        }
+        return notificationRepository.findTop5ByRecipientAndCategoryOrderByCreatedAtDesc(username, CATEGORY_PUBLISHED_ACTIVITY);
+    }
+
+    @Transactional
+    public void tagLatestActivities(List<String> recipients, String title, String content, String link) {
+        for (String recipient : recipients) {
+            List<Notification> latest = notificationRepository.findByRecipientOrderByCreatedAtDesc(recipient);
+            latest.stream()
+                .filter(n -> recipient.equals(n.getRecipient()))
+                .filter(n -> title.equals(n.getTitle()))
+                .filter(n -> content.equals(n.getContent()))
+                .filter(n -> java.util.Objects.equals(link, n.getLink()))
+                .findFirst()
+                .ifPresent(n -> {
+                    n.setCategory(CATEGORY_PUBLISHED_ACTIVITY);
+                    notificationRepository.save(n);
+                });
+        }
     }
 
     @Cacheable(cacheNames = UNREAD_COUNT_CACHE, key = "#username")

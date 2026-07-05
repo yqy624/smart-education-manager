@@ -1,128 +1,253 @@
 package com.sms.service;
 
+import com.sms.model.StoredFile;
+import com.sms.model.StoredFileCategory;
+import com.sms.repository.StoredFileRepository;
+import io.minio.BucketExistsArgs;
+import io.minio.GetObjectArgs;
+import io.minio.MakeBucketArgs;
+import io.minio.MinioClient;
+import io.minio.PutObjectArgs;
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.MalformedURLException;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * 文件存储服务。
- * 【新增文件 - 模块4：作业附件上传/下载】
- *
- * 安全设计：
- *  1. 后缀白名单校验（application.yml 的 file.allowed-extensions），拒绝可执行/脚本类文件；
- *  2. 用 UUID 重命名存储，杜绝文件名注入、覆盖与中文乱码；原始文件名单独保存用于下载时还原；
- *  3. 存储路径基于规范化的根目录，下载时校验目标路径必须位于根目录内，防止路径穿越（../）；
- *  4. 按子目录（如 submissions）隔离不同业务的文件。
- */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class FileStorageService {
 
-    @Value("${file.upload-dir:./uploads}")
-    private String uploadDir;
+    private final MinioClient minioClient;
+    private final StoredFileRepository storedFileRepository;
+
+    @Value("${file.legacy-upload-dir:./uploads}")
+    private String legacyUploadDir;
 
     @Value("${file.allowed-extensions:pdf,doc,docx,txt,zip,jpg,jpeg,png}")
     private String allowedExtensionsRaw;
 
-    private Path rootLocation;
+    @Value("${storage.minio.bucket}")
+    private String bucketName;
+
+    @Value("${storage.minio.auto-create-bucket:true}")
+    private boolean autoCreateBucket;
+
+    private Path legacyRootLocation;
     private Set<String> allowedExtensions;
 
     @PostConstruct
     public void init() {
-        this.rootLocation = Paths.get(uploadDir).toAbsolutePath().normalize();
+        this.legacyRootLocation = Paths.get(legacyUploadDir).toAbsolutePath().normalize();
         this.allowedExtensions = Arrays.stream(allowedExtensionsRaw.split(","))
-                .map(String::trim).map(String::toLowerCase)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toSet());
+            .map(String::trim)
+            .map(String::toLowerCase)
+            .filter(s -> !s.isEmpty())
+            .collect(Collectors.toSet());
+
         try {
-            Files.createDirectories(rootLocation);
-            log.info("文件存储根目录: {}", rootLocation);
-        } catch (IOException e) {
-            throw new RuntimeException("无法创建文件存储目录: " + rootLocation, e);
+            Files.createDirectories(legacyRootLocation);
+            ensureBucket();
+            log.info("MinIO bucket ready: {}", bucketName);
+            log.info("历史本地附件目录: {}", legacyRootLocation);
+        } catch (Exception e) {
+            throw new RuntimeException("初始化文件存储失败", e);
         }
     }
 
-    // PLACEHOLDER_STORE
-    /**
-     * 存储一个上传文件到指定子目录。
-     * @param file       上传文件
-     * @param subDir     业务子目录（如 "submissions"）
-     * @return 相对存储路径（形如 submissions/uuid.ext），存库用
-     */
     public String store(MultipartFile file, String subDir) {
+        return store(file, subDir, StoredFileCategory.TEMP_UPLOAD, null, null, null, null);
+    }
+
+    public String store(
+        MultipartFile file,
+        String subDir,
+        StoredFileCategory category,
+        Long uploaderUserId,
+        Long courseId,
+        Long assignmentId,
+        Long submissionId
+    ) {
         if (file == null || file.isEmpty()) {
             throw new RuntimeException("上传文件为空");
         }
-        String original = StringCleaner.clean(file.getOriginalFilename());
-        String ext = getExtension(original);
+
+        String originalName = StringCleaner.clean(file.getOriginalFilename());
+        String ext = getExtension(originalName);
         if (ext.isEmpty() || !allowedExtensions.contains(ext)) {
             throw new RuntimeException("不支持的文件类型，仅允许: " + allowedExtensions);
         }
 
-        try {
-            // 目标子目录，规范化后必须仍在根目录内
-            Path targetDir = rootLocation.resolve(subDir).normalize();
-            if (!targetDir.startsWith(rootLocation)) {
-                throw new RuntimeException("非法的存储路径");
-            }
-            Files.createDirectories(targetDir);
+        String objectKey = normalizeSubDir(subDir) + "/" + UUID.randomUUID().toString().replace("-", "") + "." + ext;
+        String contentType = detectContentType(file);
 
-            // UUID 重命名，保留扩展名
-            String storedName = UUID.randomUUID().toString().replace("-", "") + "." + ext;
-            Path targetFile = targetDir.resolve(storedName).normalize();
-
-            try (var in = file.getInputStream()) {
-                Files.copy(in, targetFile, StandardCopyOption.REPLACE_EXISTING);
-            }
-            return subDir + "/" + storedName;
-        } catch (IOException e) {
-            throw new RuntimeException("文件存储失败: " + e.getMessage(), e);
+        try (InputStream inputStream = file.getInputStream()) {
+            minioClient.putObject(
+                PutObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectKey)
+                    .stream(inputStream, file.getSize(), -1)
+                    .contentType(contentType)
+                    .build()
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("文件上传到对象存储失败: " + e.getMessage(), e);
         }
+
+        StoredFile metadata = StoredFile.builder()
+            .storagePath(objectKey)
+            .bucket(bucketName)
+            .objectKey(objectKey)
+            .originalName(originalName.isBlank() ? "file." + ext : originalName)
+            .contentType(contentType)
+            .size(file.getSize())
+            .extension(ext)
+            .uploaderUserId(uploaderUserId)
+            .category(category == null ? StoredFileCategory.TEMP_UPLOAD : category)
+            .courseId(courseId)
+            .assignmentId(assignmentId)
+            .submissionId(submissionId)
+            .build();
+        storedFileRepository.save(metadata);
+        return objectKey;
     }
 
-    /**
-     * 按相对路径加载文件为可下载资源。
-     * 会再次校验路径未越界（防止存库的路径被篡改）。
-     */
-    public Resource loadAsResource(String relativePath) {
+    public StoredFilePayload loadForDownload(String storagePath) {
+        return loadPayload(storagePath);
+    }
+
+    public StoredFilePayload loadForPreview(String storagePath) {
+        return loadPayload(storagePath);
+    }
+
+    public StoredFile getMetadata(String storagePath) {
+        return storedFileRepository.findByStoragePath(storagePath).orElse(null);
+    }
+
+    public void bindStoredFile(String storagePath, StoredFileCategory category, Long courseId, Long assignmentId, Long submissionId) {
+        storedFileRepository.findByStoragePath(storagePath).ifPresent(file -> {
+            file.setCategory(category);
+            file.setCourseId(courseId);
+            file.setAssignmentId(assignmentId);
+            file.setSubmissionId(submissionId);
+            storedFileRepository.save(file);
+        });
+    }
+
+    private StoredFilePayload loadPayload(String storagePath) {
+        StoredFile metadata = storedFileRepository.findByStoragePath(storagePath).orElse(null);
+        if (metadata != null) {
+            try (InputStream stream = minioClient.getObject(
+                GetObjectArgs.builder()
+                    .bucket(metadata.getBucket())
+                    .object(metadata.getObjectKey())
+                    .build()
+            )) {
+                byte[] bytes = stream.readAllBytes();
+                Resource resource = new ByteArrayResource(bytes);
+                return new StoredFilePayload(
+                    resource,
+                    metadata.getContentType() == null || metadata.getContentType().isBlank() ? "application/octet-stream" : metadata.getContentType(),
+                    metadata.getOriginalName(),
+                    metadata.getSize() == null ? bytes.length : metadata.getSize()
+                );
+            } catch (Exception e) {
+                throw new RuntimeException("读取对象存储文件失败: " + e.getMessage(), e);
+            }
+        }
+
+        return loadLegacyPayload(storagePath);
+    }
+
+    private StoredFilePayload loadLegacyPayload(String storagePath) {
         try {
-            Path file = rootLocation.resolve(relativePath).normalize();
-            if (!file.startsWith(rootLocation)) {
+            Path file = legacyRootLocation.resolve(storagePath).normalize();
+            if (!file.startsWith(legacyRootLocation)) {
                 throw new RuntimeException("非法的文件路径");
             }
             Resource resource = new UrlResource(file.toUri());
-            if (resource.exists() && resource.isReadable()) {
-                return resource;
+            if (!resource.exists() || !resource.isReadable()) {
+                throw new RuntimeException("文件不存在或不可读: " + storagePath);
             }
-            throw new RuntimeException("文件不存在或不可读: " + relativePath);
+            String contentType = Files.probeContentType(file);
+            return new StoredFilePayload(
+                resource,
+                contentType == null || contentType.isBlank() ? "application/octet-stream" : contentType,
+                file.getFileName().toString(),
+                Files.size(file)
+            );
         } catch (MalformedURLException e) {
-            throw new RuntimeException("文件路径错误: " + relativePath, e);
+            throw new RuntimeException("文件路径错误: " + storagePath, e);
+        } catch (IOException e) {
+            throw new RuntimeException("读取历史本地文件失败: " + storagePath, e);
         }
     }
 
-    /** 取小写扩展名（不含点），无扩展名返回空串 */
-    private String getExtension(String filename) {
-        if (filename == null) return "";
-        int dot = filename.lastIndexOf('.');
-        return dot >= 0 ? filename.substring(dot + 1).toLowerCase() : "";
+    private void ensureBucket() throws Exception {
+        boolean exists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucketName).build());
+        if (!exists) {
+            if (!autoCreateBucket) {
+                throw new RuntimeException("MinIO bucket 不存在: " + bucketName);
+            }
+            minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucketName).build());
+        }
     }
 
-    /** 简单清理文件名中的路径分隔符，防注入 */
+    private String detectContentType(MultipartFile file) {
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            return contentType;
+        }
+        String ext = getExtension(file.getOriginalFilename());
+        return switch (ext) {
+            case "pdf" -> "application/pdf";
+            case "png" -> "image/png";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "gif" -> "image/gif";
+            case "txt" -> "text/plain";
+            default -> "application/octet-stream";
+        };
+    }
+
+    private String normalizeSubDir(String subDir) {
+        String normalized = (subDir == null || subDir.isBlank()) ? "uploads" : subDir.trim().replace('\\', '/');
+        normalized = normalized.replaceAll("^/+", "").replaceAll("/+$", "");
+        if (normalized.contains("..")) {
+            throw new RuntimeException("非法的存储路径");
+        }
+        return normalized.toLowerCase(Locale.ROOT);
+    }
+
+    private String getExtension(String filename) {
+        if (filename == null) {
+            return "";
+        }
+        int dot = filename.lastIndexOf('.');
+        return dot >= 0 ? filename.substring(dot + 1).toLowerCase(Locale.ROOT) : "";
+    }
+
     static class StringCleaner {
         static String clean(String name) {
-            if (name == null) return "file";
+            if (name == null || name.isBlank()) {
+                return "file";
+            }
             return name.replaceAll("[\\\\/]", "_");
         }
     }

@@ -21,6 +21,8 @@ class TeacherServiceTest {
         PeerReviewRepository peerReviewRepository = mock(PeerReviewRepository.class);
         NotificationService notificationService = mock(NotificationService.class);
         TeacherCommentMemoryService teacherCommentMemoryService = mock(TeacherCommentMemoryService.class);
+        FileStorageService fileStorageService = mock(FileStorageService.class);
+        PublishedActivityRepository publishedActivityRepository = mock(PublishedActivityRepository.class);
 
         TeacherService service = new TeacherService(
             courseRepository,
@@ -29,7 +31,9 @@ class TeacherServiceTest {
             enrollmentRepository,
             peerReviewRepository,
             notificationService,
-            teacherCommentMemoryService
+            teacherCommentMemoryService,
+            fileStorageService,
+            publishedActivityRepository
         );
         Assignment assignment = Assignment.builder().id(1L).title("Quiz").build();
         when(assignmentRepository.findById(1L)).thenReturn(Optional.of(assignment));

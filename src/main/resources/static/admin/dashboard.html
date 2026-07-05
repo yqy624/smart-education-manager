@@ -6,7 +6,7 @@
   <title>管理员工作台</title>
   <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js?v=20240630"></script>
+  <script src="/js/echarts.min.js?v=20260705"></script>
   <link href="/css/app.css?v=20260705" rel="stylesheet">
   <style>
     .quick-action-grid,.monitor-metric-grid,.todo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
@@ -493,13 +493,11 @@ function renderRoleChart(items) {
   var chartEl = document.getElementById("chartRoles");
   var safeItems = (items || []).filter(function(item) { return Number(item.value || 0) > 0; });
   if (!safeItems.length) {
-    chartEl.innerHTML = '<div class="activity-page-list">' + [
-      { name: '学生', value: 0 },
-      { name: '教师', value: 0 },
-      { name: '管理员', value: 0 }
-    ].map(function(item) {
-      return '<div class="activity-item"><div class="activity-title">' + App.escapeHtml(item.name) + '</div><div class="activity-content">当前人数 ' + item.value + ' 人</div></div>';
-    }).join('') + '</div>';
+    if (charts.roles && charts.roles.dispose) {
+      charts.roles.dispose();
+      charts.roles = null;
+    }
+    chartEl.innerHTML = renderEmptyPanel('暂无角色数据', '创建用户后，这里会展示学生、教师和管理员的占比。', false);
     return;
   }
   chartEl.innerHTML = '';
@@ -507,12 +505,45 @@ function renderRoleChart(items) {
   charts.roles.setOption({
     tooltip: {
       trigger: "item",
-      formatter: function(params) {
-        return params.name + '：' + params.value + ' 人（' + params.percent + '%）';
-      }
+      formatter: "{b}<br/>{c} 人 ({d}%)"
     },
-    series: [{ type: "pie", radius: ["45%", "72%"], data: safeItems, label: { formatter: function(params) { return params.name + '\n' + params.value + '人'; } } }]
+    legend: {
+      bottom: 0,
+      left: "center",
+      itemWidth: 10,
+      itemHeight: 10
+    },
+    color: ["#3b82f6", "#10b981", "#f59e0b"],
+    series: [{
+      name: "用户角色",
+      type: "pie",
+      radius: ["42%", "70%"],
+      center: ["50%", "44%"],
+      avoidLabelOverlap: true,
+      itemStyle: {
+        borderColor: "#fff",
+        borderWidth: 4
+      },
+      label: {
+        show: true,
+        formatter: "{b}\n{c} 人"
+      },
+      emphasis: {
+        label: {
+          show: true,
+          fontSize: 16,
+          fontWeight: 700
+        }
+      },
+      data: safeItems.map(function(item) {
+        return {
+          name: item.name || "未命名角色",
+          value: Number(item.value || 0)
+        };
+      })
+    }]
   });
+  charts.roles.resize();
 }
 
 function renderUserPager(total, page) {

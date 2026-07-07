@@ -3,6 +3,7 @@ package com.sms.service;
 import com.sms.model.*;
 import com.sms.repository.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.List;
 import java.util.Optional;
@@ -22,6 +23,9 @@ class TeacherServiceTest {
         NotificationService notificationService = mock(NotificationService.class);
         TeacherCommentMemoryService teacherCommentMemoryService = mock(TeacherCommentMemoryService.class);
         FileStorageService fileStorageService = mock(FileStorageService.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<FileStorageService> fileStorageServiceProvider = mock(ObjectProvider.class);
+        when(fileStorageServiceProvider.getObject()).thenReturn(fileStorageService);
         PublishedActivityRepository publishedActivityRepository = mock(PublishedActivityRepository.class);
 
         TeacherService service = new TeacherService(
@@ -32,7 +36,7 @@ class TeacherServiceTest {
             peerReviewRepository,
             notificationService,
             teacherCommentMemoryService,
-            fileStorageService,
+            fileStorageServiceProvider,
             publishedActivityRepository
         );
         Assignment assignment = Assignment.builder().id(1L).title("Quiz").build();

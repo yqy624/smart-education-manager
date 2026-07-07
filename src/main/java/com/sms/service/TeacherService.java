@@ -5,6 +5,7 @@ import com.sms.dto.GradeSubmissionRequest;
 import com.sms.model.*;
 import com.sms.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +27,7 @@ public class TeacherService {
     private final PeerReviewRepository peerReviewRepository;
     private final NotificationService notificationService;
     private final TeacherCommentMemoryService teacherCommentMemoryService;
-    private final FileStorageService fileStorageService;
+    private final ObjectProvider<FileStorageService> fileStorageServiceProvider;
     private final PublishedActivityRepository publishedActivityRepository;
 
     public Map<String, Object> getDashboard(User teacher) {
@@ -284,7 +285,7 @@ public class TeacherService {
                 continue;
             }
             String storagePath = item.split("::", 2)[0];
-            fileStorageService.bindStoredFile(
+            fileStorageServiceProvider.getObject().bindStoredFile(
                 storagePath,
                 StoredFileCategory.ASSIGNMENT_ATTACHMENT,
                 assignment.getCourse().getId(),

@@ -255,6 +255,24 @@ var userPageSize = 10;
 var tabs = Array.from(document.querySelectorAll(".nav-item"));
 tabs.forEach(function(el) { el.addEventListener("click", function() { switchTab(el.dataset.tab); }); });
 window.addEventListener("resize", function() { Object.keys(charts).forEach(function(key) { if (charts[key] && charts[key].resize) charts[key].resize(); }); });
+function hasEcharts() {
+  return typeof window.echarts !== "undefined";
+}
+function resizeVisibleCharts() {
+  requestAnimationFrame(function() {
+    ["chartVisits", "chartRoles", "monitorResourceChart", "monitorServiceChart", "monitorErrorChart"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el || !hasEcharts()) return;
+      var chart = echarts.getInstanceByDom(el);
+      if (chart && chart.resize) chart.resize();
+    });
+  });
+}
+function parseApiErrorPayload(payload, fallback) {
+  if (!payload) return fallback;
+  if (typeof payload === "string") return payload;
+  return payload.message || payload.error || fallback;
+}
 
 function api(path, method, body) {
   if (method === undefined) method = "GET";
@@ -262,9 +280,13 @@ function api(path, method, body) {
     method: method,
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN },
     body: body ? JSON.stringify(body) : null
-  }).then(function(res) { return res.json(); }).then(function(data) {
-    if (!data.success) throw new Error(data.message || "请求失败");
-    return data.data;
+  }).then(function(res) {
+    var contentType = res.headers.get("content-type") || "";
+    return (contentType.indexOf("application/json") >= 0 ? res.json() : res.text()).then(function(payload) {
+      if (!res.ok) throw new Error(parseApiErrorPayload(payload, "请求失败"));
+      if (!payload || !payload.success) throw new Error(parseApiErrorPayload(payload, "请求失败"));
+      return payload.data;
+    });
   });
 }
 
@@ -302,11 +324,17 @@ function switchTab(tab) {
   var title = { dashboard: "概览", users: "用户管理", courses: "课程管理", logs: "审计日志", monitor: "系统监控" }[tab] || "概览";
   document.getElementById("titleText").textContent = title;
   App.setBreadcrumb(["管理员工作台", title]);
-  if (tab === "dashboard") loadDashboard();
+  if (tab === "dashboard") {
+    loadDashboard();
+    resizeVisibleCharts();
+  }
   if (tab === "users") loadUsers();
   if (tab === "courses") loadCourses();
   if (tab === "logs") loadLogs();
-  if (tab === "monitor") loadMonitor();
+  if (tab === "monitor") {
+    loadMonitor();
+    resizeVisibleCharts();
+  }
 }
 
 function openUserForm() {
@@ -398,6 +426,17 @@ function loadDashboard() {
   return api("/admin/dashboard").then(function(data) {
     currentDashboard = data;
     renderDashboard(data);
+    resizeVisibleCharts();
+  }).catch(function(err) {
+    document.getElementById("kpiGrid").innerHTML = renderEmptyPanel('概览加载失败', err.message || '暂时无法加载管理员概览数据。', false);
+    document.getElementById("quickActionGrid").innerHTML = '';
+    document.getElementById("todoGrid").innerHTML = renderEmptyPanel('暂无待办事项', '管理员概览加载失败，请稍后重试。', true);
+    document.getElementById("topCoursesRank").innerHTML = renderEmptyPanel('暂无课程排行', '管理员概览加载失败，请稍后重试。', true);
+    document.getElementById("activityPanel").innerHTML = renderEmptyPanel('暂无活动记录', '管理员概览加载失败，请稍后重试。', false);
+    document.getElementById("overviewExtra").innerHTML = '';
+    renderVisitChart([]);
+    renderRoleChart([]);
+    console.error(err);
   });
 }
 
@@ -474,8 +513,12 @@ function quickAction(label, icon, handler) {
 
 function renderVisitChart(visits) {
   var chartEl = document.getElementById("chartVisits");
-  if (!visits.length) {
-    chartEl.innerHTML = renderEmptyPanel('暂无活跃数据', '产生登录活跃记录后，这里会展示近 7 天活跃用户趋势。', false);
+  if (!visits.length || !hasEcharts()) {
+    if (charts.visits && charts.visits.dispose) {
+      charts.visits.dispose();
+      charts.visits = null;
+    }
+    chartEl.innerHTML = renderEmptyPanel('暂无活跃数据', hasEcharts() ? '产生登录活跃记录后，这里会展示近 7 天活跃用户趋势。' : '图表资源加载失败，请稍后刷新重试。', false);
     return;
   }
   chartEl.innerHTML = '';
@@ -487,6 +530,7 @@ function renderVisitChart(visits) {
     yAxis: { type: "value" },
     series: [{ type: "line", smooth: true, areaStyle: {}, data: visits.map(function(item) { return item.value; }), itemStyle: { color: "#0f766e" }, lineStyle: { width: 3, color: "#0f766e" } }]
   });
+  charts.visits.resize();
 }
 
 function renderRoleChart(items) {
@@ -508,7 +552,7 @@ function renderRoleChart(items) {
       formatter: "{b}<br/>{c} 人 ({d}%)"
     },
     legend: {
-      bottom: 0,
+      bottom: 6,
       left: "center",
       itemWidth: 10,
       itemHeight: 10
@@ -517,12 +561,16 @@ function renderRoleChart(items) {
     series: [{
       name: "用户角色",
       type: "pie",
-      radius: ["42%", "70%"],
-      center: ["50%", "44%"],
+      radius: ["40%", "62%"],
+      center: ["44%", "42%"],
       avoidLabelOverlap: true,
       itemStyle: {
         borderColor: "#fff",
         borderWidth: 4
+      },
+      labelLine: {
+        length: 12,
+        length2: 10
       },
       label: {
         show: true,
@@ -565,12 +613,14 @@ function renderActivities(list) {
     : renderEmptyPanel('暂无活动记录', '发布活动后，这里会显示可编辑、可删除、可重新发布的活动列表。', false);
 }
 
-function renderActivities(list) {
-  document.getElementById('activityPanel').innerHTML = list && list.length
-    ? '<div class="d-flex flex-column gap-3">' + list.map(function(item) {
-        return '<div class="section-surface"><div class="d-flex justify-content-between align-items-start gap-3 flex-wrap"><div class="flex-grow-1"><div class="fw-semibold">' + App.escapeHtml(item.title || '未命名活动') + '</div><div class="small text-muted mt-1">' + App.escapeHtml(item.content || '暂无活动内容') + '</div><div class="small text-muted mt-2">发布时间：' + App.fmtTime(item.publishedAt) + ' · 受众：' + App.escapeHtml(renderActivityAudience(item.audience)) + ' · 版本：' + (item.publishVersion || 1) + '</div></div><div class="d-flex flex-column align-items-end gap-2"><span class="badge-soft ' + renderActivityStatusClass(item.status) + '">' + renderActivityStatus(item.status) + '</span><div class="d-flex gap-2 flex-wrap justify-content-end"><button class="btn btn-outline-primary btn-sm" onclick="editActivity(' + item.id + ')">编辑</button><button class="btn btn-outline-warning btn-sm" onclick="republishActivity(' + item.id + ')">重新发布</button><button class="btn btn-outline-danger btn-sm" onclick="deleteActivity(' + item.id + ')">删除</button></div></div></div></div>';
-      }).join('') + '</div>'
-    : renderEmptyPanel('暂无活动记录', '发布活动后，这里会显示可编辑、可删除、可重新发布的活动列表。', false);
+function loadActivities() {
+  return api('/admin/activities').then(function(list) {
+    renderActivities(list || []);
+    return list || [];
+  }).catch(function(err) {
+    document.getElementById('activityPanel').innerHTML = renderEmptyPanel('暂无活动记录', err.message || '活动面板加载失败，请稍后重试。', false);
+    throw err;
+  });
 }
 
 function editActivity(id) {

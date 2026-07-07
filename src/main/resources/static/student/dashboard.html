@@ -6,7 +6,7 @@
   <title>学生工作台</title>
   <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.bootcdn.net/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
-  <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js?v=20240630"></script>
+  <script src="/js/echarts.min.js?v=20260705"></script>
   <link href="/css/app.css?v=20260705" rel="stylesheet">
 </head>
 <body class="page-shell" data-role="student">
@@ -188,6 +188,24 @@ var activityPage = 1;
 var pageSize = 5;
 var assignmentSubmissions = {};
 var peerReviewGroups = [];
+function hasEcharts() {
+  return typeof window.echarts !== "undefined";
+}
+function scheduleVisibleChartResize(ids) {
+  requestAnimationFrame(function() {
+    (ids || []).forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el || !hasEcharts()) return;
+      var chart = echarts.getInstanceByDom(el);
+      if (chart && chart.resize) chart.resize();
+    });
+  });
+}
+function parseApiErrorPayload(payload, fallback) {
+  if (!payload) return fallback;
+  if (typeof payload === "string") return payload;
+  return payload.message || payload.error || fallback;
+}
 tabs.forEach(function(el) { el.addEventListener("click", function() { switchTab(el.dataset.tab); }); });
 function switchTab(tab) {
   tabs.forEach(function(x) { x.classList.toggle("active", x.dataset.tab === tab); });
@@ -196,6 +214,10 @@ function switchTab(tab) {
   var title = {dashboard:"概览", courses:"课程", assignments:"作业", "peer-reviews":"互评", grades:"成绩"}[tab];
   document.getElementById("titleText").textContent = title;
   App.setBreadcrumb(["学生工作台", title]);
+  if (tab === "dashboard") {
+    loadDashboard();
+    scheduleVisibleChartResize(["chartScores"]);
+  }
   if (tab === "courses") loadCourses();
   if (tab === "assignments") loadAssignments();
   if (tab === "peer-reviews") loadPeerReviews();
@@ -209,9 +231,11 @@ async function api(url, method, body) {
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + TOKEN },
     body: body ? JSON.stringify(body) : null
   });
-  var data = await res.json();
-  if (!data.success) throw new Error(data.message || "请求失败");
-  return data.data;
+  var contentType = res.headers.get("content-type") || "";
+  var payload = contentType.indexOf("application/json") >= 0 ? await res.json() : await res.text();
+  if (!res.ok) throw new Error(parseApiErrorPayload(payload, "请求失败"));
+  if (!payload || !payload.success) throw new Error(parseApiErrorPayload(payload, "请求失败"));
+  return payload.data;
 }
 
 async function openProfileModal() {
@@ -286,43 +310,47 @@ function goStudentActivityPage(page) {
 }
 
 async function loadDashboard() {
-  var dashboard = await api('/student/dashboard');
-  var recentGrades = dashboard.recentGrades || [];
-  var activities = dashboard.recentActivities || [];
-  var scoreTrend = dashboard.scoreTrend || [];
-  document.getElementById("kpiGrid").innerHTML = [
-    { label: "已选课程", value: dashboard.selectedCourseCount || 0, color: "var(--accent)", tab: "courses" },
-    { label: "已评分作业", value: dashboard.gradedCount || 0, color: "var(--accent-2)", tab: "grades" },
-    { label: "互评加分", value: Number(dashboard.peerReviewBonus || 0).toFixed(1), color: "var(--accent-3)", tab: "peer-reviews" },
-    { label: "待提交", value: dashboard.pendingCount || 0, color: "var(--accent-4)", tab: "assignments" }
-  ].map(function(k) { return '<div class="kpi" role="button" tabindex="0" onclick="switchTab(\'' + k.tab + '\')" onkeydown="handleKpiKey(event, \'' + k.tab + '\')" style="border-left:4px solid ' + k.color + '"><div class="value">' + k.value + '</div><div class="label">' + k.label + '</div></div>'; }).join("");
-
-  var recentHtml = '<div class="section-head"><h5 class="mb-0">最近成绩</h5><span class="metric-muted">最近 6 条评分结果</span></div><div class="card-body-fill">';
-  if (recentGrades.length) {
-    recentHtml += '<div class="table-wrap">' + recentGrades.map(function(x) {
-      var courseName = x.courseName ? App.escapeHtml(x.courseName) : '未关联课程';
-      return '<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><div class="fw-semibold">' + App.escapeHtml(x.assignmentTitle || '未命名作业') + '</div><div class="small text-muted">' + courseName + '</div></div><span class="badge-soft bg-primary bg-opacity-10 text-primary fw-bold" style="font-size:16px">' + x.score + '</span></div>';
-    }).join('') + '</div>';
-  } else {
-    recentHtml += renderEmptyPanel('暂无最近成绩', '老师完成批改后，这里会显示最新成绩摘要。', true);
-  }
-  recentHtml += '</div>';
-  if (activities.length) {
-    var activityPages = Math.max(1, Math.ceil(activities.length / 3));
-    if (activityPage > activityPages) activityPage = activityPages;
-    var activityStart = (activityPage - 1) * 3;
-    var pageActivities = activities.slice(activityStart, activityStart + 3);
-    recentHtml += '<div class="section-head mt-3"><h6 class="mb-0">近期活动</h6><span class="metric-muted">管理员最新发布</span></div><div class="activity-page-list">' + pageActivities.map(function(item) {
-      return '<div class="activity-item"><div class="activity-title">' + App.escapeHtml(item.title || '平台活动') + '</div><div class="activity-content">' + App.escapeHtml(item.content || '暂无活动内容') + '</div><div class="activity-meta">' + App.timeAgo(item.publishedAt || item.createdAt) + '</div></div>';
-    }).join('') + '</div>' + renderActivityPager(activities.length, activityPage, 'goStudentActivityPage');
-  } else {
-    recentHtml += '<div class="section-head mt-3"><h6 class="mb-0">近期活动</h6></div>' + renderEmptyPanel('暂无近期活动', '管理员发布活动后，会在这里展示校园动态。', true);
-  }
-  document.getElementById("recentBox").innerHTML = recentHtml;
-
-  var chartEl = document.getElementById("chartScores");
   try {
+    var dashboard = await api('/student/dashboard');
+    var recentGrades = dashboard.recentGrades || [];
+    var activities = dashboard.recentActivities || [];
+    var scoreTrend = dashboard.scoreTrend || [];
+    document.getElementById("kpiGrid").innerHTML = [
+      { label: "已选课程", value: dashboard.selectedCourseCount || 0, color: "var(--accent)", tab: "courses" },
+      { label: "已评分作业", value: dashboard.gradedCount || 0, color: "var(--accent-2)", tab: "grades" },
+      { label: "互评加分", value: Number(dashboard.peerReviewBonus || 0).toFixed(1), color: "var(--accent-3)", tab: "peer-reviews" },
+      { label: "待提交", value: dashboard.pendingCount || 0, color: "var(--accent-4)", tab: "assignments" }
+    ].map(function(k) { return '<div class="kpi" role="button" tabindex="0" onclick="switchTab(\'' + k.tab + '\')" onkeydown="handleKpiKey(event, \'' + k.tab + '\')" style="border-left:4px solid ' + k.color + '"><div class="value">' + k.value + '</div><div class="label">' + k.label + '</div></div>'; }).join("");
+
+    var recentHtml = '<div class="section-head"><h5 class="mb-0">最近成绩</h5><span class="metric-muted">最近 6 条评分结果</span></div><div class="card-body-fill">';
+    if (recentGrades.length) {
+      recentHtml += '<div class="table-wrap">' + recentGrades.map(function(x) {
+        var courseName = x.courseName ? App.escapeHtml(x.courseName) : '未关联课程';
+        return '<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><div><div class="fw-semibold">' + App.escapeHtml(x.assignmentTitle || '未命名作业') + '</div><div class="small text-muted">' + courseName + '</div></div><span class="badge-soft bg-primary bg-opacity-10 text-primary fw-bold" style="font-size:16px">' + x.score + '</span></div>';
+      }).join('') + '</div>';
+    } else {
+      recentHtml += renderEmptyPanel('暂无最近成绩', '老师完成批改后，这里会显示最新成绩摘要。', true);
+    }
+    recentHtml += '</div>';
+    if (activities.length) {
+      var activityPages = Math.max(1, Math.ceil(activities.length / 3));
+      if (activityPage > activityPages) activityPage = activityPages;
+      var activityStart = (activityPage - 1) * 3;
+      var pageActivities = activities.slice(activityStart, activityStart + 3);
+      recentHtml += '<div class="section-head mt-3"><h6 class="mb-0">近期活动</h6><span class="metric-muted">管理员最新发布</span></div><div class="activity-page-list">' + pageActivities.map(function(item) {
+        return '<div class="activity-item"><div class="activity-title">' + App.escapeHtml(item.title || '平台活动') + '</div><div class="activity-content">' + App.escapeHtml(item.content || '暂无活动内容') + '</div><div class="activity-meta">' + App.timeAgo(item.publishedAt || item.createdAt) + '</div></div>';
+      }).join('') + '</div>' + renderActivityPager(activities.length, activityPage, 'goStudentActivityPage');
+    } else {
+      recentHtml += '<div class="section-head mt-3"><h6 class="mb-0">近期活动</h6></div>' + renderEmptyPanel('暂无近期活动', '管理员发布活动后，会在这里展示校园动态。', true);
+    }
+    document.getElementById("recentBox").innerHTML = recentHtml;
+
+    var chartEl = document.getElementById("chartScores");
     if (!chartEl) return;
+    if (!hasEcharts()) {
+      chartEl.innerHTML = renderEmptyPanel('暂无成绩趋势', '图表资源加载失败，请稍后刷新重试。', false);
+      return;
+    }
     chartEl.innerHTML = '';
     var chart = echarts.getInstanceByDom(chartEl) || echarts.init(chartEl);
     if (scoreTrend.length) {
@@ -340,7 +368,12 @@ async function loadDashboard() {
       chartEl.innerHTML = renderEmptyPanel('暂无成绩趋势', '当前还没有已评分作业，后续会在这里展示你的成绩变化。', false);
     }
   } catch (err) {
-    chartEl.innerHTML = renderEmptyPanel('暂无成绩趋势', '当前成绩趋势暂时无法渲染，请稍后刷新重试。', false);
+    document.getElementById("kpiGrid").innerHTML = renderEmptyPanel('概览加载失败', err.message || '暂时无法加载学生概览数据。', false);
+    document.getElementById("recentBox").innerHTML = renderEmptyPanel('暂无近期内容', '学生首页加载失败，请稍后重试。', false);
+    var chartEl = document.getElementById("chartScores");
+    if (chartEl) {
+      chartEl.innerHTML = renderEmptyPanel('暂无成绩趋势', '当前成绩趋势暂时无法渲染，请稍后刷新重试。', false);
+    }
     console.error(err);
   }
 }

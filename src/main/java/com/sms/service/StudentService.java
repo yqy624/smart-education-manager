@@ -4,6 +4,7 @@ import com.sms.dto.ActivitySummary;
 import com.sms.model.*;
 import com.sms.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -28,7 +29,7 @@ public class StudentService {
     private final SubmissionRepository submissionRepository;
     private final PeerReviewRepository peerReviewRepository;
     private final NotificationService notificationService;
-    private final FileStorageService fileStorageService;
+    private final ObjectProvider<FileStorageService> fileStorageServiceProvider;
     private final PublishedActivityRepository publishedActivityRepository;
 
     public Map<String, Object> getDashboard(User student) {
@@ -277,7 +278,7 @@ public class StudentService {
         if (parts.length > 1 && !parts[1].isBlank()) {
             submission.setFileName(parts[1]);
         }
-        fileStorageService.bindStoredFile(
+        fileStorageServiceProvider.getObject().bindStoredFile(
             storagePath,
             StoredFileCategory.SUBMISSION_ATTACHMENT,
             submission.getAssignment().getCourse().getId(),
